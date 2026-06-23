@@ -22,16 +22,30 @@ BEST_EFFORT_DISTANCES = [
 ]
 
 
-def best_efforts(stream: pd.DataFrame) -> dict[str, float]:
-    """Fastest elapsed time (seconds) covering each target distance.
+def clean_cumulative(t, dist):
+    """Cumulative (distance, time) with paused/stopped/teleport steps removed, so
+    best efforts reflect real running. A step is dropped — contributing neither
+    distance NOR time — when it's a recording gap (>30s), goes backwards, or implies
+    an impossible speed (>12 m/s ≈ a GPS jump). Dropping both keeps them consistent."""
+    dt = np.diff(t, prepend=t[0])
+    dd = np.nan_to_num(np.diff(dist, prepend=dist[0]), nan=0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        speed = np.where(dt > 0, dd / dt, 0.0)
+    bad = (dt > 30) | (dd < 0) | (speed > 12.0)
+    dd = np.where(bad, 0.0, dd); dd[0] = 0.0
+    dt = np.where(bad, 0.0, dt); dt[0] = 0.0
+    return np.cumsum(dd), np.cumsum(dt)
 
-    Uses a forward two-pointer sweep over cumulative distance vs. time.
+
+def best_efforts(stream: pd.DataFrame) -> dict[str, float]:
+    """Fastest *moving* time (seconds) covering each target distance.
+
+    Forward two-pointer sweep over cleaned cumulative distance vs. time.
     """
     if stream.empty or stream["dist_m"].isna().all():
         return {}
     s = stream.dropna(subset=["dist_m", "t"]).sort_values("t")
-    dist = s["dist_m"].to_numpy()
-    t = s["t"].to_numpy()
+    dist, t = clean_cumulative(s["t"].to_numpy(), s["dist_m"].to_numpy())
     n = len(dist)
     total = dist[-1] - dist[0]
     out: dict[str, float] = {}
@@ -58,15 +72,15 @@ def mile_splits(stream: pd.DataFrame) -> list[dict]:
     if stream.empty or stream["dist_m"].isna().all():
         return []
     s = stream.dropna(subset=["dist_m", "t"]).sort_values("t").reset_index(drop=True)
-    dist = s["dist_m"].to_numpy()
+    dist, mt = clean_cumulative(s["t"].to_numpy(), s["dist_m"].to_numpy())  # moving distance/time
     splits = []
     mile = 1
     start_idx = 0
     for i in range(len(dist)):
         if dist[i] - dist[start_idx] >= M_PER_MI:
             seg = s.iloc[start_idx : i + 1]
-            dt = seg["t"].iloc[-1] - seg["t"].iloc[0]
-            dd_mi = (seg["dist_m"].iloc[-1] - seg["dist_m"].iloc[0]) / M_PER_MI
+            dt = mt[i] - mt[start_idx]
+            dd_mi = (dist[i] - dist[start_idx]) / M_PER_MI
             ele = seg["ele_m"].dropna()
             splits.append(
                 {

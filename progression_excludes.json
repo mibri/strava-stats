@@ -1,0 +1,7 @@
+{
+  "_comment": "Activity IDs to exclude from PROGRESSION charts only (pace/efficiency/hill/cadence/decoupling/PRs/marathon projection). These runs are STILL counted in totals, weekly volume, the calendar, and the map. Use this for runs with bad GPS/elevation/HR data that skew the trends. Find an Activity ID in the run-detail view or the runs table.",
+  "ids": [
+    "18072746361",
+    "17737070212"
+  ]
+}

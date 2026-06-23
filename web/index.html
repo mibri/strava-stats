@@ -61,17 +61,16 @@
         <span class="tf-spacer"></span>
         <span class="hint" style="margin:0">Click any dot to open that run.</span>
       </div>
-      <div class="card"><h2>Projected marathon time</h2><p class="hint">Riegel projection from your best efforts. Orange line = best within the window; dashed line = your sub-3:45 goal.</p><div id="chart-marathon" class="chart"></div></div>
       <div class="card"><h2>Weekly volume</h2><p class="hint">Bars = miles/week, line = 4-week average. The marathon block is the recent ramp.</p><div id="chart-volume" class="chart"></div></div>
       <div class="card"><h2>Fitness, fatigue &amp; form</h2><p class="hint">CTL (fitness) vs ATL (fatigue). Form (TSB) above 0 = fresh, deeply negative = heavy load.</p><div id="chart-fitness" class="chart"></div></div>
       <div class="card"><h2>Injury-risk load (acute : chronic)</h2><p class="hint">This week's load vs your recent norm. Sweet spot 0.8–1.3 (green); above 1.5 (red) is a spike — worth watching given ITB history.</p><div id="chart-acwr" class="chart"></div></div>
       <div class="card"><h2>Aerobic efficiency — pace at heart rate</h2><p class="hint">Easy/long-run pace per heartbeat over time. Rising = same effort, faster running.</p><div id="chart-ef" class="chart"></div></div>
       <div class="card"><h2>Hill fitness — climbing efficiency at heart rate</h2><p class="hint">Grade-adjusted speed per heartbeat on hilly runs. Rising = you climb faster <em>at the same HR</em> — real hill fitness, not just choosing to push.</p><div id="chart-hill" class="chart"></div></div>
-      <div class="card"><h2>Pace trend by run type</h2><div id="chart-pace" class="chart"></div></div>
+      <div class="card"><h2>Pace trend by run type</h2><div class="chart-controls" id="pace-controls"></div><div id="chart-pace" class="chart"></div></div>
       <div class="card"><h2>Aerobic durability — decoupling on long runs</h2><p class="hint">How much your heart rate drifts up in the back half (Pa:HR). Under 5% (green) = strong endurance; high drift = fade or under-fueling. Key marathon signal.</p><div id="chart-decoup" class="chart"></div></div>
       <div class="card"><h2>Cadence trend</h2><p class="hint">Steps per minute. Higher, steadier cadence often means less impact per stride.</p><div id="chart-cadence" class="chart"></div></div>
       <div class="card"><h2>Heat &amp; pace — does temperature slow you down?</h2><p class="hint">Easy-run pace vs temperature. A rightward-downward tilt = heat costs you pace.</p><div id="chart-temp" class="chart"></div></div>
-      <div class="card"><h2>Personal-best progression</h2><div class="pr-controls" id="pr-controls"></div><div id="chart-pr" class="chart"></div></div>
+      <div class="card"><h2>Race times — your bests vs. projected</h2><p class="hint">Pick a distance. Solid = your actual best efforts; dashed = what your fitness projects (Riegel from your best effort at any distance). Marathon shows your sub-3:45 goal.</p><div class="pr-controls" id="race-controls"></div><div id="chart-races" class="chart"></div></div>
       <div class="card"><h2>When you run</h2><p class="hint">Your weekly rhythm — runs by day of week and time of day.</p><div class="dual-chart"><div id="chart-dow" class="chart half"></div><div id="chart-hour" class="chart half"></div></div></div>
       <div class="card"><h2>Heart-rate zones</h2><p class="hint">Where your training time goes. A big easy/aerobic base (Z1–Z3) with less hard time is the goal.</p><div id="chart-zones" class="chart"></div></div>
       <div class="card"><h2>Easy / hard balance</h2><p class="hint">Polarized training: most easy, some hard.</p><div id="chart-balance" class="chart"></div></div>

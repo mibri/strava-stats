@@ -60,6 +60,20 @@ coach/
 
 Everything under `data/` is gitignored (it's your private export).
 
+## Excluding bad runs from progression
+
+Some runs have bad GPS/elevation/HR data that skews the trend charts (e.g. a run
+with a corrupt grade-adjusted pace). To drop a run from the **progression charts
+only** — while keeping it in totals, weekly volume, the calendar, and the map —
+add its Activity ID to `progression_excludes.json`:
+
+```json
+{ "ids": ["18072746361", "17737070212"] }
+```
+
+Find the Activity ID in the runs table (excluded runs show a ⊘) or the run-detail
+view, then re-run `python -m pipeline.build`.
+
 ## Refreshing with new runs
 
 Re-export from Strava and drop the new `activities.csv` + track files into

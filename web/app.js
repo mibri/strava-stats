@@ -2,9 +2,16 @@
 const DATA = "../data/clean";
 const MEDIA = "../data/media";
 const TYPE_COLORS = {
-  easy: "#4f93ff", long: "#9b6bff", workout: "#fc5200",
+  easy: "#4f93ff", long: "#ec5fa6", workout: "#fc5200",
   recovery: "#45c08a", race: "#ffd23f",
 };
+// Distinct marker shapes so types stay separable where dots overlap.
+const TYPE_SYMBOLS = {
+  easy: "circle", long: "diamond", workout: "triangle-up",
+  recovery: "square", race: "star",
+};
+const TYPE_GLYPH = { easy: "●", long: "◆", workout: "▲", recovery: "■", race: "★" };
+const TYPE_ORDER = ["easy", "long", "workout", "recovery", "race"];
 const PLOT_FONT = { color: "#8b94a3", family: "-apple-system, Segoe UI, Roboto, sans-serif" };
 
 const state = { runs: [], summary: null, routes: null, points: [],
@@ -184,25 +191,26 @@ function renderCalendar() {
   const dow = ["", "M", "", "W", "", "F", ""];
   const today = new Date();
 
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const blocks = years.map((yr) => {
-    const start = new Date(`${yr}-01-01`); start.setDate(start.getDate() - start.getDay()); // back to Sunday
-    const end = new Date(`${yr}-12-31`);
-    const cells = []; const monthMarks = []; let col = 0;
+    const start = new Date(yr, 0, 1); start.setDate(start.getDate() - start.getDay());   // back to Sunday
+    const end = new Date(yr, 11, 31); end.setDate(end.getDate() + (6 - end.getDay()));    // forward to Saturday
+    const cells = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      if (d.getDay() === 0) col++;
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      if (d.getFullYear() != yr) { cells.push(`<div class="cal-cell future"></div>`); continue; }
-      if (d.getDate() <= 7 && d.getDay() === 0) monthMarks.push({ col, label: d.toLocaleString("en", { month: "short" }) });
-      if (d > today) { cells.push(`<div class="cal-cell future"></div>`); continue; }
-      const mi = byDate[iso] || 0;
-      const click = state.dateById[iso] ? ` data-id="${state.dateById[iso]}"` : "";
-      cells.push(`<div class="cal-cell${mi > 0 ? " has" : ""}"${click} title="${iso}: ${mi.toFixed(1)} mi" style="background:${color(mi)}"></div>`);
+      if (d.getFullYear() != yr || d > today) { cells.push(`<div class="cal-cell future"></div>`); continue; }
+      const k = iso(d); const mi = byDate[k] || 0;
+      const click = state.dateById[k] ? ` data-id="${state.dateById[k]}"` : "";
+      cells.push(`<div class="cal-cell${mi > 0 ? " has" : ""}"${click} title="${k}: ${mi.toFixed(1)} mi" style="background:${color(mi)}"></div>`);
     }
+    const ncols = Math.round(cells.length / 7);
+    // place each month label at the week-column where its 1st falls
+    const monthCols = MONTHS.map((_, m) => Math.floor((new Date(yr, m, 1) - start) / (7 * 864e5)) + 1);
     return `<div class="cal-year">
       <div class="cal-year-label">${yr}</div>
-      <div class="cal-months">${monthMarks.map((m) => `<span class="cal-month" style="grid-column:${m.col}">${m.label}</span>`).join("")}</div>
+      <div class="cal-months" style="grid-template-columns:repeat(${ncols},1fr)">${MONTHS.map((m, i) => `<span class="cal-month" style="grid-column:${monthCols[i]}">${m}</span>`).join("")}</div>
       <div class="cal-row"><div class="cal-dow">${dow.map((d) => `<span>${d}</span>`).join("")}</div>
-      <div class="cal-grid">${cells.join("")}</div></div>
+      <div class="cal-grid" style="grid-template-columns:repeat(${ncols},1fr)">${cells.join("")}</div></div>
     </div>`;
   }).join("");
 
@@ -259,8 +267,8 @@ function renderProgression() {
       y: rolling(w.map((d) => d.miles), 4), line: { color: "#ffd23f", width: 3 } },
   ], { yaxis: { title: "miles", gridcolor: "#2a313c" } });
 
-  // Projected marathon time vs goal
-  drawMarathon();
+  // Race times — actual bests vs projected (combined, distance-selectable)
+  drawRaces();
 
   // Fitness / fatigue / form
   plot("chart-fitness", [
@@ -296,16 +304,10 @@ function renderProgression() {
   // Hill efficiency (grade-adjusted EF, hilly runs only)
   drawEF("chart-hill", pts.filter((p) => p.ef_gap != null && p.elev_pm >= 40), "ef_gap", "climb-adjusted speed per heartbeat →");
 
-  // Pace trend by type
-  const types = ["easy", "long", "workout", "race", "recovery"];
-  const paceTraces = types.map((ty) => {
-    const p = pts.filter((x) => x.type === ty);
-    return { type: "scatter", mode: "markers", name: ty, x: p.map((x) => x.date), y: p.map((x) => x.pace_s),
-      marker: { color: TYPE_COLORS[ty], size: 7, opacity: 0.75 }, customdata: p.map((x) => x.id),
-      text: p.map((x) => `${x.date} · ${x.dist} mi · ${fmtPace(x.pace_s)}/mi`),
-      hovertemplate: `%{text}<extra>${ty}</extra>` };
-  }).filter((t) => t.x.length);
-  plot("chart-pace", paceTraces, { yaxis: { title: "pace (/mi)", ...paceAxis(pts.map((p) => p.pace_s)) } }, true);
+  // Pace trend by type — type toggles + optional per-type trend lines
+  state.curPts = pts;
+  if (!state.paceControlsBuilt) { setupPaceControls(); state.paceControlsBuilt = true; }
+  drawPaceChart();
 
   // Aerobic durability — decoupling on long runs
   const dec = pts.filter((p) => p.decoup != null && ["long", "easy"].includes(p.type) && p.dist >= 8);
@@ -338,9 +340,6 @@ function renderProgression() {
     text: hot.map((p) => `${p.date} · ${Math.round(p.temp_f)}°F · ${fmtPace(p.pace_s)}/mi`),
     hovertemplate: "%{text}<extra></extra>",
   }], { xaxis: { title: "temperature (°F)", gridcolor: "#2a313c" }, yaxis: { title: "pace (/mi)", ...paceAxis(hot.map((p) => p.pace_s)) } }, true);
-
-  // PR progression
-  buildPRChart();
 
   // When you run
   drawPatterns();
@@ -388,30 +387,104 @@ function drawPatterns() {
   }], { margin: { l: 40, r: 12, t: 10, b: 32 }, xaxis: { title: "hour of day", gridcolor: "#2a313c" }, yaxis: { title: "runs", gridcolor: "#2a313c" } });
 }
 
-function drawMarathon() {
-  const GOAL = 3 * 3600 + 45 * 60; // sub-3:45
-  const all = (state.summary.marathon_projection || []).filter((p) => inFrame(p.date));
-  if (!all.length) { Plotly.purge("chart-marathon"); return; }
-  let best = Infinity; const line = [];
-  all.forEach((p) => { if (p.proj_s < best) { best = p.proj_s; line.push(p); } });
-  const xs = all.map((p) => p.date);
-  // Clamp the axis: easy-run efforts can project absurd marathons; show the useful band.
-  const sorted = all.map((p) => p.proj_s).sort((a, b) => a - b);
-  const yMin = Math.max(2.5 * 3600, Math.min(best, GOAL) - 600);
-  const yMax = Math.min(sorted[Math.floor(sorted.length * 0.9)] || 6 * 3600, 6.5 * 3600);
-  const ticks = []; for (let t = Math.ceil(yMin / 900) * 900; t <= yMax; t += 900) ticks.push(t);
-  plot("chart-marathon", [
-    { type: "scatter", mode: "markers", name: "per-run projection", x: xs, y: all.map((p) => p.proj_s),
-      marker: { color: "#4f93ff", size: 5, opacity: 0.3 }, customdata: all.map((p) => p.id),
-      text: all.map((p) => `${p.date} · ${fmtDur(p.proj_s)} (from ${p.from})`), hovertemplate: "%{text}<extra></extra>" },
-    { type: "scatter", mode: "lines+markers", name: "best projection", x: line.map((p) => p.date), y: line.map((p) => p.proj_s),
+function setupPaceControls() {
+  const present = TYPE_ORDER.filter((t) => state.runs.some((r) => r.type === t));
+  if (!state.paceTypes) { state.paceTypes = new Set(present); state.paceTrend = true; }
+  const el = $("#pace-controls");
+  el.innerHTML = present.map((t) => {
+    const on = state.paceTypes.has(t);
+    return `<button class="type-chip ${on ? "on" : ""}" data-t="${t}" style="${on ? `border-color:${TYPE_COLORS[t]}` : ""}">
+      <span class="glyph" style="color:${on ? TYPE_COLORS[t] : "var(--muted)"}">${TYPE_GLYPH[t]}</span>${t}</button>`;
+  }).join("") +
+    `<label class="trend-toggle"><input type="checkbox" id="pace-trend-cb" ${state.paceTrend ? "checked" : ""}/> trend lines</label>`;
+  el.querySelectorAll(".type-chip").forEach((b) => (b.onclick = () => {
+    const t = b.dataset.t;
+    state.paceTypes.has(t) ? state.paceTypes.delete(t) : state.paceTypes.add(t);
+    setupPaceControls(); drawPaceChart();
+  }));
+  $("#pace-trend-cb").onchange = (e) => { state.paceTrend = e.target.checked; drawPaceChart(); };
+}
+
+function drawPaceChart() {
+  const pts = state.curPts || [];
+  const traces = [];
+  TYPE_ORDER.filter((t) => state.paceTypes.has(t)).forEach((ty) => {
+    const p = pts.filter((x) => x.type === ty).sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!p.length) return;
+    traces.push({
+      type: "scatter", mode: "markers", name: ty, x: p.map((x) => x.date), y: p.map((x) => x.pace_s),
+      marker: { color: TYPE_COLORS[ty], size: 6, opacity: state.paceTrend ? 0.3 : 0.7,
+        symbol: TYPE_SYMBOLS[ty], line: { color: "#0f1115", width: 0.5 } },
+      customdata: p.map((x) => x.id), text: p.map((x) => `${x.date} · ${x.dist} mi · ${fmtPace(x.pace_s)}/mi`),
+      hovertemplate: `%{text}<extra>${ty}</extra>`,
+    });
+    if (state.paceTrend && p.length >= 4) {
+      const win = Math.min(10, Math.max(3, Math.round(p.length / 4)));
+      traces.push({
+        type: "scatter", mode: "lines", x: p.map((x) => x.date), y: rolling(p.map((x) => x.pace_s), win),
+        line: { color: TYPE_COLORS[ty], width: 3, shape: "spline" }, showlegend: false, hoverinfo: "skip",
+      });
+    }
+  });
+  plot("chart-pace", traces, {
+    showlegend: false,
+    yaxis: { title: "pace (/mi)", ...paceAxis(pts.map((p) => p.pace_s)) },
+  }, true);
+}
+
+const RACE_DISTS = ["1 mi", "5k", "10k", "Half", "Marathon"];
+const RACE_GOALS = { Marathon: 3 * 3600 + 45 * 60 }; // sub-3:45
+let raceDist = null;
+function drawRaces() {
+  const prog = state.summary.pr_progression || {};
+  const proj = state.summary.projections || {};
+  const dists = RACE_DISTS.filter((d) => (prog[d] && prog[d].length) || (proj[d] && proj[d].length));
+  if (!dists.length) return;
+  if (!raceDist || !dists.includes(raceDist)) raceDist = dists.includes("Marathon") ? "Marathon" : dists[dists.length - 1];
+
+  $("#race-controls").innerHTML = dists.map((d) =>
+    `<button class="${d === raceDist ? "active" : ""}" data-d="${d}">${d}</button>`).join("");
+  $("#race-controls").querySelectorAll("button").forEach((b) => (b.onclick = () => { raceDist = b.dataset.d; drawRaces(); }));
+
+  const efforts = (prog[raceDist] || []).filter((p) => inFrame(p.date));
+  let b1 = Infinity; const prLine = [];
+  efforts.forEach((p) => { if (p.time_s < b1) { b1 = p.time_s; prLine.push(p); } });
+  const projAll = (proj[raceDist] || []).filter((p) => inFrame(p.date));
+  let b2 = Infinity; const projLine = [];
+  projAll.forEach((p) => { if (p.proj_s < b2) { b2 = p.proj_s; projLine.push(p); } });
+  const GOAL = RACE_GOALS[raceDist] || null;
+
+  const traces = [];
+  if (efforts.length) {
+    traces.push({ type: "scatter", mode: "markers", name: "efforts", x: efforts.map((p) => p.date), y: efforts.map((p) => p.time_s),
+      marker: { color: "#4f93ff", size: 6, opacity: 0.3 }, customdata: efforts.map((p) => p.id),
+      text: efforts.map((p) => `${p.date} · ${p.time}`), hovertemplate: "%{text}<extra></extra>" });
+    traces.push({ type: "scatter", mode: "lines+markers", name: "your best", x: prLine.map((p) => p.date), y: prLine.map((p) => p.time_s),
       line: { color: "#fc5200", width: 3, shape: "hv" }, marker: { size: 7, color: "#fc5200" },
-      customdata: line.map((p) => p.id), text: line.map((p) => `${p.date} · ${fmtDur(p.proj_s)}`), hovertemplate: "%{text}<extra></extra>" },
-    { type: "scatter", mode: "lines", name: "goal 3:45", x: [xs[0], xs[xs.length - 1]], y: [GOAL, GOAL],
-      line: { color: "#ffd23f", width: 2, dash: "dash" }, hoverinfo: "skip" },
-  ], {
-    yaxis: { title: "projected time", range: [yMax, yMin], gridcolor: "#2a313c",
-      tickvals: ticks, ticktext: ticks.map(fmtDur) },
+      customdata: prLine.map((p) => p.id), text: prLine.map((p) => `best ${p.time}`), hovertemplate: "%{x}<br>%{text}<extra></extra>" });
+  }
+  if (projLine.length) {
+    traces.push({ type: "scatter", mode: "lines", name: "projected", x: projLine.map((p) => p.date), y: projLine.map((p) => p.proj_s),
+      line: { color: "#45c08a", width: 2.5, dash: "dot" }, customdata: projLine.map((p) => p.id),
+      text: projLine.map((p) => `projected ${fmtDur(p.proj_s)}`), hovertemplate: "%{x}<br>%{text}<extra></extra>" });
+  }
+
+  // y range: efforts span + the best lines + goal, clipping the slowest easy-run efforts
+  const effSorted = efforts.map((p) => p.time_s).sort((a, b) => a - b);
+  const lows = [b1, b2, GOAL].filter((x) => x != null && isFinite(x));
+  let yLo = Math.min(...lows, ...(effSorted.length ? [effSorted[0]] : []));
+  let yHi = Math.max(
+    effSorted.length ? effSorted[Math.floor(effSorted.length * 0.9)] : 0,
+    ...lows, projLine.length ? projLine[0].proj_s : 0);
+  yLo *= 0.985; yHi *= 1.02;
+  const xsAll = [...efforts.map((p) => p.date), ...projLine.map((p) => p.date)].sort();
+  if (GOAL && xsAll.length) {
+    traces.push({ type: "scatter", mode: "lines", name: `goal ${fmtDur(GOAL)}`, x: [xsAll[0], xsAll[xsAll.length - 1]], y: [GOAL, GOAL],
+      line: { color: "#ffd23f", width: 2, dash: "dash" }, hoverinfo: "skip" });
+  }
+  const ticks = []; for (let t = Math.ceil(yLo / 300) * 300; t <= yHi; t += (yHi - yLo > 3600 ? 900 : 300)) ticks.push(t);
+  plot("chart-races", traces, {
+    yaxis: { title: "time", range: [yHi, yLo], gridcolor: "#2a313c", tickvals: ticks, ticktext: ticks.map(fmtDur) },
   }, true);
 }
 
@@ -430,36 +503,6 @@ function drawZones() {
     xaxis: { title: `hours (HRmax est. ${hz.hrmax})`, gridcolor: "#2a313c" }, yaxis: { gridcolor: "#2a313c" } });
 }
 
-let prDist = null;
-function buildPRChart() {
-  const prog = state.summary.pr_progression;
-  const dists = Object.keys(prog).filter((k) => prog[k].length);
-  if (!prDist) prDist = dists.includes("5k") ? "5k" : dists[0];
-  $("#pr-controls").innerHTML = dists.map((d) =>
-    `<button class="${d === prDist ? "active" : ""}" data-d="${d}">${d}</button>`).join("");
-  $("#pr-controls").querySelectorAll("button").forEach((b) => (b.onclick = () => { prDist = b.dataset.d; buildPRChart(); }));
-
-  const e = prog[prDist].filter((p) => inFrame(p.date));
-  // recompute running-best within the window
-  let best = Infinity; const prs = [];
-  e.forEach((p) => { if (p.time_s < best) { best = p.time_s; prs.push(p); } });
-  plot("chart-pr", [
-    { type: "scatter", mode: "markers", name: "efforts", x: e.map((p) => p.date), y: e.map((p) => p.time_s),
-      marker: { color: "#4f93ff", size: 6, opacity: 0.4 }, customdata: e.map((p) => p.id),
-      text: e.map((p) => `${p.date} · ${p.time}`), hovertemplate: "%{text}<extra></extra>" },
-    { type: "scatter", mode: "lines+markers", name: "best", x: prs.map((p) => p.date), y: prs.map((p) => p.time_s),
-      line: { color: "#fc5200", width: 3, shape: "hv" }, marker: { size: 8, color: "#fc5200" },
-      customdata: prs.map((p) => p.id), text: prs.map((p) => `${p.date} · PR ${p.time}`), hovertemplate: "%{text}<extra></extra>" },
-  ], { yaxis: { title: "time", autorange: "reversed", gridcolor: "#2a313c",
-      tickvals: tickTimes(e.map((p) => p.time_s)), ticktext: tickTimes(e.map((p) => p.time_s)).map(fmtDur) } }, true);
-}
-function tickTimes(vals) {
-  const v = vals.filter((x) => x != null);
-  if (!v.length) return [];
-  const lo = Math.min(...v), hi = Math.max(...v), step = Math.max(5, Math.round((hi - lo) / 6 / 5) * 5);
-  const out = []; for (let t = Math.floor(lo / step) * step; t <= hi + step; t += step) out.push(t);
-  return out;
-}
 
 /* ---------- runs table ---------- */
 function renderRuns() {
@@ -496,7 +539,7 @@ function drawRows() {
   $("#runs-table tbody").innerHTML = rows.map((r) => `
     <tr data-id="${r.id}">
       <td>${r.date.slice(0, 10)}</td>
-      <td>${escapeHtml(r.name)}${r.n_photos ? " 📷" : ""}${r.description ? ` <span class="muted">· ${escapeHtml(r.description.slice(0, 40))}</span>` : ""}</td>
+      <td>${escapeHtml(r.name)}${r.n_photos ? " 📷" : ""}${r.exclude_prog ? ` <span class="muted" title="excluded from progression charts">⊘</span>` : ""}${r.description ? ` <span class="muted">· ${escapeHtml(r.description.slice(0, 40))}</span>` : ""}</td>
       <td><span class="pill ${r.type}">${r.type}</span></td>
       <td class="num">${r.distance_mi.toFixed(2)}</td>
       <td class="num">${fmtPace(r.pace_s)}</td>
@@ -627,10 +670,11 @@ function buildHeatmap() {
     fit(buttons[+b.dataset.i].bounds);
   }));
 
-  // Photo pins (placed at each photographed run's start point)
+  // Photo pins. The export strips photo EXIF (no real coords), so we spread each
+  // run's photos evenly ALONG its route rather than stacking them all at the start.
   let photoLayer = null;
-  const startById = {};
-  state.routes.features.forEach((f) => { startById[f.properties.id] = f.geometry.coordinates[0]; });
+  const routeById = {};
+  state.routes.features.forEach((f) => { routeById[f.properties.id] = f.geometry.coordinates; });
   $("#toggle-photos").onclick = () => {
     const btn = $("#toggle-photos");
     if (photoLayer) { map.removeLayer(photoLayer); photoLayer = null; btn.textContent = "📷 Show photo pins"; btn.classList.remove("active"); return; }
@@ -638,10 +682,14 @@ function buildHeatmap() {
     const byRun = {};
     (state.summary.photos || []).forEach((p) => { (byRun[p.id] ||= []).push(p); });
     Object.entries(byRun).forEach(([rid, ps]) => {
-      const c = startById[rid]; if (!c) return;
-      const thumb = `${MEDIA}/${ps[0].file.replace("media/", "")}`;
-      const icon = L.divIcon({ className: "", html: `<img src="${thumb}" style="width:34px;height:34px;border-radius:6px;border:2px solid #fc5200;object-fit:cover">`, iconSize: [34, 34] });
-      L.marker([c[1], c[0]], { icon }).on("click", () => openLightbox(ps.map((p) => ({ ...p })), 0)).addTo(photoLayer);
+      const route = routeById[rid]; if (!route || !route.length) return;
+      ps.forEach((p, i) => {
+        const frac = (i + 0.5) / ps.length;               // spread along the route
+        const c = route[Math.floor(frac * (route.length - 1))];
+        const thumb = `${MEDIA}/${p.file.replace("media/", "")}`;
+        const icon = L.divIcon({ className: "", html: `<img src="${thumb}" style="width:34px;height:34px;border-radius:6px;border:2px solid #fc5200;object-fit:cover">`, iconSize: [34, 34] });
+        L.marker([c[1], c[0]], { icon }).on("click", () => openLightbox(ps, i)).addTo(photoLayer);
+      });
     });
     photoLayer.addTo(map);
     btn.textContent = "📷 Hide photo pins"; btn.classList.add("active");

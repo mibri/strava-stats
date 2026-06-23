@@ -109,9 +109,18 @@ def build_regions(features) -> list[dict]:
             vals = sorted(vals)
             return vals[min(len(vals) - 1, int(len(vals) * p))]
 
-        # "core" bounds trim outlier routes (e.g. an occasional far long-run) so the
-        # default view sits tight on where most runs happen.
-        core = [[pct(lats, 0.08), pct(lons, 0.08)], [pct(lats, 0.92), pct(lons, 0.92)]]
+        def span(vals, min_span, shift=0.0):
+            """City-sized box for the default view. `shift` nudges the window (as a
+            fraction of its width) — used to pull the SF view west so the bay /
+            Treasure Island don't leave dead water on the right edge."""
+            lo_d, hi_d = pct(vals, 0.04), pct(vals, 0.96)
+            half = max((hi_d - lo_d) / 2, min_span / 2)
+            c = (lo_d + hi_d) / 2 + shift * 2 * half
+            return c - half, c + half
+
+        clat = span(lats, 0.11)
+        clon = span(lons, 0.13, shift=-0.18)
+        core = [[clat[0], clon[0]], [clat[1], clon[1]]]
         regions.append({
             "name": name, "count": len(c["pts"]),
             "lat": round(c["lat"], 4), "lon": round(c["lon"], 4),

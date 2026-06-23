@@ -8,7 +8,7 @@
   --accent: #fc5200;      /* Strava orange */
   --accent-soft: #fc520022;
   --easy: #4f93ff;
-  --long: #9b6bff;
+  --long: #ec5fa6;
   --workout: #fc5200;
   --recovery: #45c08a;
   --race: #ffd23f;
@@ -103,7 +103,7 @@ tbody tr:hover { background: var(--bg-elev2); }
 
 .pill { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
 .pill.easy { background: #4f93ff22; color: var(--easy); }
-.pill.long { background: #9b6bff22; color: var(--long); }
+.pill.long { background: #ec5fa622; color: var(--long); }
 .pill.workout { background: #fc520022; color: var(--workout); }
 .pill.recovery { background: #45c08a22; color: var(--recovery); }
 .pill.race { background: #ffd23f22; color: var(--race); }
@@ -121,6 +121,19 @@ tbody tr:hover { background: var(--bg-elev2); }
 }
 .pr-controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+/* Chart type-toggle chips */
+.chart-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.type-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--bg-elev2);
+  border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: 999px;
+  cursor: pointer; font-size: 13px; font-weight: 600; text-transform: capitalize; transition: .15s; }
+.type-chip .glyph { font-size: 11px; line-height: 1; transition: .15s; }
+.type-chip:not(.on) { opacity: .55; }
+.type-chip:hover { opacity: 1; }
+.type-chip.on { color: var(--text); }
+.trend-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted);
+  font-size: 13px; cursor: pointer; margin-left: auto; user-select: none; }
+.trend-toggle input { accent-color: var(--accent); cursor: pointer; }
+
 /* Timeframe bar */
 .timeframe-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
@@ -134,20 +147,22 @@ tbody tr:hover { background: var(--bg-elev2); }
 .dual-chart { display: flex; gap: 16px; flex-wrap: wrap; }
 .chart.half { flex: 1; min-width: 260px; height: 280px; }
 
-/* Calendar heatmap — one block per year, newest first */
-.cal-year { margin-bottom: 14px; }
-.cal-year-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
-.cal-months { display: flex; gap: 3px; margin: 0 0 4px 26px; }
-.cal-month { font-size: 11px; color: var(--muted); }
-.cal-row { display: flex; gap: 4px; align-items: flex-start; }
-.cal-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; }
-.cal-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--bg-elev2); cursor: default; }
+/* Calendar heatmap — one block per year, newest first, fills the card width */
+.cal-year { margin-bottom: 18px; }
+.cal-year-label { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.cal-months { display: grid; margin: 0 0 4px 22px; }              /* grid-template-columns set inline */
+.cal-month { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.cal-row { display: flex; gap: 6px; align-items: stretch; }
+.cal-grid { flex: 1; min-width: 0; display: grid; grid-auto-flow: column;
+  grid-template-rows: repeat(7, auto); gap: 3px; }                /* grid-template-columns set inline */
+.cal-cell { aspect-ratio: 1 / 1; width: 100%; min-width: 0; border-radius: 2px; background: var(--bg-elev2); cursor: default; }
 .cal-cell.has { cursor: pointer; }
+.cal-cell.has:hover { outline: 1.5px solid var(--text); }
 .cal-cell.future { background: transparent; }
-.cal-dow { display: grid; grid-template-rows: repeat(7, 11px); gap: 3px; margin-right: 4px; }
-.cal-dow span { font-size: 9px; color: var(--muted); line-height: 11px; }
-.cal-legend { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--muted); }
-.cal-legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+.cal-dow { display: grid; grid-template-rows: repeat(7, 1fr); gap: 3px; width: 14px; }
+.cal-dow span { font-size: 9px; color: var(--muted); display: flex; align-items: center; }
+.cal-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.cal-legend i { width: 15px; height: 15px; border-radius: 3px; display: inline-block; }
 
 /* Lightbox */
 .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); z-index: 3000; display: flex;

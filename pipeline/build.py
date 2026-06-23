@@ -41,6 +41,18 @@ STREAMS = CLEAN / "streams"
 PR_LABELS = ["1 mi", "5k", "10k", "Half", "Marathon"]
 
 
+def load_excludes() -> set[str]:
+    """Activity IDs to drop from progression charts (kept in totals/map)."""
+    f = ROOT / "progression_excludes.json"
+    if not f.exists():
+        return set()
+    try:
+        return set(str(i) for i in json.loads(f.read_text()).get("ids", []))
+    except Exception as e:
+        print(f"  ! could not read progression_excludes.json: {e}")
+        return set()
+
+
 def fmt_pace(sec_per_mi: float | None) -> str | None:
     if sec_per_mi is None or not math.isfinite(sec_per_mi):
         return None
@@ -238,6 +250,8 @@ def pr_progression(runs: pd.DataFrame) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {label: [] for label in PR_LABELS}
     best: dict[str, float] = {}
     for _, r in runs.iterrows():
+        if r.get("exclude_prog"):
+            continue
         efforts = r.get("_best_efforts") or {}
         for label in PR_LABELS:
             t = efforts.get(label)
@@ -304,6 +318,7 @@ def build():
 
     # ---- Classify (needs split_spread + chronological baseline) ----
     runs["type"] = classify_runs(runs)
+    runs["exclude_prog"] = runs["id"].isin(load_excludes())
 
     # ---- Pass 2: write per-run detail files + route geometry ----
     features = []  # geojson route features
@@ -349,6 +364,7 @@ def build():
         "calories": runs["calories"], "rel_effort": runs["rel_effort"],
         "temp_f": runs["temp_f"].round(0), "weather": runs["weather"].astype(str),
         "n_photos": runs["photos"].map(len),
+        "exclude_prog": runs["exclude_prog"],
         "has_gps": [bool(f) for f in [runs["id"].iloc[i] in
                     {ft["properties"]["id"] for ft in features} for i in range(len(runs))]],
     }
@@ -430,7 +446,7 @@ def build_summary(runs: pd.DataFrame) -> dict:
         "daily_miles": _daily_miles(runs),
         "patterns": _patterns(runs),
         "hr_zones": _hr_zones(runs),
-        "marathon_projection": _marathon_projection(runs),
+        "projections": _projections(runs),
         "photos": [
             {"id": r["id"], "date": r["date"].strftime("%Y-%m-%d"), "name": str(r["name"]), "file": f}
             for _, r in runs.iterrows() for f in r["photos"]
@@ -447,7 +463,7 @@ def _f(v, nd=None):
 def _run_points(runs: pd.DataFrame) -> list[dict]:
     out = []
     for _, r in runs.iterrows():
-        if not pd.notna(r["pace_s"]):
+        if not pd.notna(r["pace_s"]) or r.get("exclude_prog"):
             continue
         epm = r["elev_gain_ft"] / r["distance_mi"] if r["distance_mi"] else None
         out.append({
@@ -498,17 +514,40 @@ def _hr_zones(runs: pd.DataFrame) -> dict:
     return {"hrmax": round(hrmax), "zones": zones}
 
 
-def _marathon_projection(runs: pd.DataFrame) -> list[dict]:
-    """Riegel-projected marathon time from each run's longest reliable best effort."""
-    out = []
-    for _, r in runs.iterrows():
-        eff = r["_best_efforts"] or {}
-        pick = next((lbl for lbl in ["Marathon", "Half", "10 mi", "10k", "5k"] if lbl in eff), None)
-        if not pick:
+PROJ_TARGETS = ["1 mi", "5k", "10k", "Half", "Marathon"]
+PROJ_WINDOW_DAYS = 90
+
+
+def _fitness_projection(runs: pd.DataFrame) -> dict[str, list[dict]]:
+    """Strava-style predicted race times from a fitness MODEL, not a single effort.
+
+    At each run date we fit a power law  time = a · distance^b  to your best efforts
+    (every sub-distance) over the trailing 90 days, then predict each race distance
+    from that fit. Because it's a model over your whole speed/endurance curve, a PB
+    at any distance shifts every prediction, and a prediction need not equal the PB.
+    `b` (the fatigue/endurance exponent) is clamped to a sane 1.00–1.18.
+    """
+    recs = [(r["date"], r["_best_efforts"]) for _, r in runs.iterrows()
+            if not r.get("exclude_prog") and r["_best_efforts"]]
+    out: dict[str, list[dict]] = {lbl: [] for lbl in PROJ_TARGETS}
+    for d, _ in recs:
+        lo = d - pd.Timedelta(days=PROJ_WINDOW_DAYS)
+        best: dict[str, float] = {}
+        for dd, eff in recs:
+            if lo <= dd <= d:
+                for lbl, t in eff.items():
+                    if lbl not in best or t < best[lbl]:
+                        best[lbl] = t
+        if len(best) < 2:
             continue
-        proj = riegel_predict(EFFORT_M[pick], eff[pick], 42195)
-        out.append({"date": r["date"].strftime("%Y-%m-%d"), "id": r["id"],
-                    "proj_s": round(proj), "from": pick})
+        X = np.log([EFFORT_M[l] for l in best])
+        Y = np.log([best[l] for l in best])
+        b = float(np.polyfit(X, Y, 1)[0])
+        b = min(1.18, max(1.00, b))
+        lna = float(np.mean(Y - b * X))  # refit intercept after clamping slope
+        for lbl in PROJ_TARGETS:
+            t = math.exp(lna + b * math.log(EFFORT_M[lbl]))
+            out[lbl].append({"date": d.strftime("%Y-%m-%d"), "proj_s": round(t)})
     return out
 
 
