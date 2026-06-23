@@ -74,12 +74,14 @@ function rolling(arr, win) {
 
 /* ---------- boot ---------- */
 async function boot() {
-  const [summary, runs, routes] = await Promise.all([
+  const [summary, runs, routes, segments] = await Promise.all([
     fetch(`${DATA}/summary.json`).then((r) => r.json()),
     fetch(`${DATA}/runs.json`).then((r) => r.json()),
     fetch(`${DATA}/routes.geojson`).then((r) => r.json()).catch(() => null),
+    fetch(`${DATA}/segments.json`).then((r) => r.json()).catch(() => []),
   ]);
   state.summary = summary; state.runs = runs; state.routes = routes; state.points = summary.points || [];
+  state.segments = segments || [];
   runs.forEach((r) => { const d = r.date.slice(0, 10); if (!state.dateById[d]) state.dateById[d] = r.id; });
 
   const t = summary.totals;
@@ -696,7 +698,86 @@ function buildHeatmap() {
     btn.textContent = "📷 Hide photo pins"; btn.classList.add("active");
   };
 
+  // Repeated-segments overlay. Dims the orange heatmap and draws each detected
+  // corridor colored by its EF trend; click one to open its trend panel.
+  const TREND_COLOR = { improving: "#45c08a", declining: "#ec5fa6", flat: "#7f8a99" };
+  let segLayer = null;
+  $("#toggle-segments").onclick = () => {
+    const btn = $("#toggle-segments");
+    if (segLayer) {
+      map.removeLayer(segLayer); segLayer = null;
+      all.forEach((pl) => pl.setStyle({ opacity: 0.3 }));
+      $("#segment-panel").innerHTML = "";
+      btn.textContent = "🏃 Show segments"; btn.classList.remove("active");
+      return;
+    }
+    const segs = state.segments || [];
+    if (!segs.length) { btn.textContent = "🏃 No segments found"; return; }
+    all.forEach((pl) => pl.setStyle({ opacity: 0.05 }));
+    segLayer = L.layerGroup();
+    segs.forEach((s) => {
+      const col = TREND_COLOR[s.trend.label] || "#7f8a99";
+      const pl = L.polyline(s.polyline, { color: col, weight: 5, opacity: 0.85 }).addTo(segLayer);
+      pl.on("mouseover", () => pl.setStyle({ weight: 9 }));
+      pl.on("mouseout", () => pl.setStyle({ weight: 5 }));
+      pl.on("click", () => showSegmentPanel(s));
+      pl.bindTooltip(`${s.name} · ${s.n_runs}×`, { sticky: true });
+    });
+    segLayer.addTo(map);
+    btn.textContent = "🏃 Hide segments"; btn.classList.add("active");
+  };
+
   fit((buttons[1] || buttons[0]).bounds);
+}
+
+// Trend panel for one segment: EF headline + pace & HR below, each effort a dot
+// colored by run type (click a dot to open that run).
+function showSegmentPanel(seg) {
+  const panel = $("#segment-panel");
+  const efs = seg.efforts;
+  const TREND = { improving: ["▲ improving", "#45c08a"], declining: ["▼ declining", "#ec5fa6"], flat: ["▬ flat", "#8b94a3"] };
+  const [tlabel, tcolor] = TREND[seg.trend.label] || TREND.flat;
+  panel.innerHTML = `<div class="card seg-card">
+    <button class="seg-close" id="seg-close">✕</button>
+    <h2>${escapeHtml(seg.name)}</h2>
+    <p class="hint">${seg.length_mi} mi · run ${seg.n_runs}× · efficiency
+      <span style="color:${tcolor};font-weight:600">${tlabel}</span></p>
+    <div id="seg-ef" style="height:210px"></div>
+    <div class="seg-mini">
+      <div><h3>Pace</h3><div id="seg-pace" style="height:160px"></div></div>
+      <div><h3>Heart rate</h3><div id="seg-hr" style="height:160px"></div></div>
+    </div>
+    <p class="hint">Dots colored by run type. Click any dot to open that run.</p>
+  </div>`;
+  $("#seg-close").onclick = () => { panel.innerHTML = ""; };
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  const x = efs.map((e) => e.date);
+  const customdata = efs.map((e) => e.id);
+  const marker = () => ({
+    size: 9, color: efs.map((e) => TYPE_COLORS[e.type] || "#888"),
+    symbol: efs.map((e) => TYPE_SYMBOLS[e.type] || "circle"),
+    line: { width: 1, color: "#11151c" },
+  });
+  const dots = (y, fmt) => ({
+    type: "scatter", mode: "markers", x, y, marker: marker(), customdata,
+    text: efs.map((e, i) => `${e.date} · ${e.type} · ${fmt(e, i)}`), hovertemplate: "%{text}<extra></extra>",
+  });
+
+  const efy = efs.map((e) => e.ef);
+  plot("seg-ef", [
+    dots(efy, (e) => `EF ${e.ef != null ? e.ef.toFixed(4) : "—"}`),
+    { type: "scatter", mode: "lines", x, y: rolling(efy, 5), line: { color: "#ffd23f", width: 2 }, hoverinfo: "skip", showlegend: false },
+  ], { margin: { l: 56, r: 16, t: 8, b: 34 }, xaxis: { gridcolor: "#2a313c" },
+       yaxis: { title: "EF (speed ÷ HR)", gridcolor: "#2a313c" }, height: 210 }, true);
+
+  const py = efs.map((e) => e.pace_s);
+  plot("seg-pace", [dots(py, (e) => `${fmtPace(e.pace_s)}/mi`)],
+    { margin: { l: 52, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: paceAxis(py), height: 160 }, true);
+
+  const hy = efs.map((e) => e.hr);
+  plot("seg-hr", [dots(hy, (e) => `${e.hr != null ? Math.round(e.hr) : "—"} bpm`)],
+    { margin: { l: 46, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: { gridcolor: "#2a313c" }, height: 160 }, true);
 }
 
 // Info-icon tooltips: hover works via CSS; click toggles for touch devices.

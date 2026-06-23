@@ -126,6 +126,19 @@ tbody tr:hover { background: var(--bg-elev2); }
 .leaflet-container { background: #0b0d11; }
 #map .card { padding: 16px; }
 
+/* Segment trend panel */
+#segment-panel:empty { display: none; }
+.seg-card { position: relative; margin-top: 16px; }
+.seg-card h2 { font-size: 18px; }
+.seg-card h3 { margin: 0 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.seg-mini { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+@media (max-width: 720px) { .seg-mini { grid-template-columns: 1fr; } }
+.seg-close {
+  position: absolute; top: 12px; right: 12px; background: var(--bg-elev2);
+  border: 1px solid var(--border); color: var(--muted); width: 28px; height: 28px;
+  border-radius: 8px; cursor: pointer; font-size: 14px; line-height: 1;
+}
+
 /* PR controls */
 .pr-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .pr-controls button {

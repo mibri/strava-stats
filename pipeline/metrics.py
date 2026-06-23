@@ -137,6 +137,47 @@ def downsample_stream(stream: pd.DataFrame, max_points: int = 600) -> dict:
     return out
 
 
+def build_trajectory(stream: pd.DataFrame, every_m: float = 12.0) -> dict:
+    """Index-aligned GPS trajectory, resampled to ~every_m spacing, for segment
+    matching.
+
+    Unlike downsample_stream — whose `latlng` is sampled on its own stride and so
+    does NOT line up with `t`/`dist_mi`/`hr` — every list here shares one index:
+    lat[k] was recorded at t[k], dist_mi[k], hr[k]. That alignment is what lets us
+    pull the elapsed time / HR over an arbitrary stretch of route.
+    """
+    if stream.empty or stream["dist_m"].isna().all():
+        return {}
+    s = stream.dropna(subset=["lat", "lon", "dist_m", "t"]).sort_values("t")
+    if len(s) < 2:
+        return {}
+    lat = s["lat"].to_numpy(); lon = s["lon"].to_numpy()
+    dist = s["dist_m"].to_numpy(); t = s["t"].to_numpy()
+    hr = s["hr"].to_numpy() if s["hr"].notna().any() else None
+    spd = s["speed_ms"].to_numpy() if s["speed_ms"].notna().any() else None
+
+    keep = [0]
+    last = dist[0]
+    for i in range(1, len(dist)):
+        if dist[i] - last >= every_m:
+            keep.append(i); last = dist[i]
+    if keep[-1] != len(dist) - 1:
+        keep.append(len(dist) - 1)
+
+    out: dict[str, list] = {
+        "lat": [round(float(lat[i]), 5) for i in keep],
+        "lon": [round(float(lon[i]), 5) for i in keep],
+        "t": [round(float(t[i]), 1) for i in keep],
+        "dist_mi": [round(float(dist[i]) / M_PER_MI, 4) for i in keep],
+    }
+    if hr is not None:
+        out["hr"] = [int(hr[i]) if pd.notna(hr[i]) else None for i in keep]
+    if spd is not None:
+        out["pace_s"] = [round(M_PER_MI / spd[i], 1) if pd.notna(spd[i]) and spd[i] > 0.3 else None
+                         for i in keep]
+    return out
+
+
 def riegel_predict(known_dist_m: float, known_time_s: float, target_m: float, exp: float = 1.06) -> float:
     """Riegel race-time prediction: T2 = T1 * (D2/D1)^exp."""
     return known_time_s * (target_m / known_dist_m) ** exp

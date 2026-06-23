@@ -24,6 +24,7 @@ from .metrics import (
     M_PER_MI,
     aerobic_decoupling,
     best_efforts,
+    build_trajectory,
     downsample_stream,
     mile_splits,
     riegel_predict,
@@ -287,6 +288,7 @@ def build():
         efforts: dict[str, float] = {}
         splits: list[dict] = []
         stream_compact: dict = {}
+        traj: dict = {}
 
         if track_path and track_path.exists():
             try:
@@ -294,6 +296,7 @@ def build():
                 efforts = best_efforts(stream)
                 splits = mile_splits(stream)
                 stream_compact = downsample_stream(stream)
+                traj = build_trajectory(stream)  # index-aligned, for segment matching
             except Exception as e:  # keep going; a bad file shouldn't kill the build
                 print(f"  ! {rid} track parse failed: {e}")
 
@@ -302,7 +305,7 @@ def build():
         spread = (np.median(paces) - min(paces)) / np.median(paces) * 100 if len(paces) >= 3 else np.nan
         min_split = min(paces) if paces else np.nan
         parsed[rid] = {"efforts": efforts, "splits": splits, "stream": stream_compact,
-                       "spread": spread, "min_split": min_split,
+                       "traj": traj, "spread": spread, "min_split": min_split,
                        "decoup": aerobic_decoupling(stream_compact)}
 
     runs["_best_efforts"] = runs["id"].map(lambda i: parsed[i]["efforts"])
@@ -387,6 +390,13 @@ def build():
     summary["regions"] = build_regions(features)
 
     (CLEAN / "summary.json").write_text(json.dumps(summary))
+
+    # ---- repeated segments (mined from GPS, SF only) ----
+    from .segments import build_segments
+    print("Detecting repeated segments…")
+    segs = build_segments(parsed, runs)
+    (CLEAN / "segments.json").write_text(json.dumps(segs))
+    print(f"Wrote {len(segs)} segments")
 
     print(f"Wrote runs.json, {len(features)} routes, {len(list(STREAMS.glob('*.json')))} stream files")
 
