@@ -32,7 +32,8 @@ Personal running analytics + LLM coach over a Strava export. Single user, runs l
   percentile-trimmed for a tight default map view.
 - `summary.json` carries everything the dashboard needs: `points` (one rich,
   clickable row per run incl. `ef`, `ef_gap`, `cadence`, `decoup`), `daily_miles`,
-  `patterns`, `hr_zones`, `marathon_projection` (Riegel), `fitness` (CTL/ATL/TSB/ACWR),
+  `patterns`, `hr_zones`, `projections` (per-distance race predictions from a rolling
+  power-law fitness fit — not single-effort Riegel), `fitness` (CTL/ATL/TSB/ACWR),
   `regions`, `photos`.
 
 ## Don't

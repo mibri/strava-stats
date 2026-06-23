@@ -449,9 +449,9 @@ function drawRaces() {
   const efforts = (prog[raceDist] || []).filter((p) => inFrame(p.date));
   let b1 = Infinity; const prLine = [];
   efforts.forEach((p) => { if (p.time_s < b1) { b1 = p.time_s; prLine.push(p); } });
-  const projAll = (proj[raceDist] || []).filter((p) => inFrame(p.date));
-  let b2 = Infinity; const projLine = [];
-  projAll.forEach((p) => { if (p.proj_s < b2) { b2 = p.proj_s; projLine.push(p); } });
+  // projection is a fitness MODEL over time — plot it directly (it rises/falls with
+  // fitness), not as a cumulative best, so it doesn't just trace the PBs.
+  const projAll = (proj[raceDist] || []).filter((p) => inFrame(p.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
   const GOAL = RACE_GOALS[raceDist] || null;
 
   const traces = [];
@@ -463,21 +463,22 @@ function drawRaces() {
       line: { color: "#fc5200", width: 3, shape: "hv" }, marker: { size: 7, color: "#fc5200" },
       customdata: prLine.map((p) => p.id), text: prLine.map((p) => `best ${p.time}`), hovertemplate: "%{x}<br>%{text}<extra></extra>" });
   }
-  if (projLine.length) {
-    traces.push({ type: "scatter", mode: "lines", name: "projected", x: projLine.map((p) => p.date), y: projLine.map((p) => p.proj_s),
-      line: { color: "#45c08a", width: 2.5, dash: "dot" }, customdata: projLine.map((p) => p.id),
-      text: projLine.map((p) => `projected ${fmtDur(p.proj_s)}`), hovertemplate: "%{x}<br>%{text}<extra></extra>" });
+  if (projAll.length) {
+    traces.push({ type: "scatter", mode: "lines", name: "predicted (fitness)", x: projAll.map((p) => p.date), y: projAll.map((p) => p.proj_s),
+      line: { color: "#45c08a", width: 2.5, shape: "spline" },
+      text: projAll.map((p) => `predicted ${fmtDur(p.proj_s)}`), hovertemplate: "%{x}<br>%{text}<extra></extra>" });
   }
 
-  // y range: efforts span + the best lines + goal, clipping the slowest easy-run efforts
+  // y range: efforts span + projection range + goal, clipping the slowest easy-run efforts
   const effSorted = efforts.map((p) => p.time_s).sort((a, b) => a - b);
-  const lows = [b1, b2, GOAL].filter((x) => x != null && isFinite(x));
+  const projVals = projAll.map((p) => p.proj_s);
+  const lows = [b1, GOAL, ...projVals].filter((x) => x != null && isFinite(x));
   let yLo = Math.min(...lows, ...(effSorted.length ? [effSorted[0]] : []));
   let yHi = Math.max(
     effSorted.length ? effSorted[Math.floor(effSorted.length * 0.9)] : 0,
-    ...lows, projLine.length ? projLine[0].proj_s : 0);
+    GOAL || 0, ...projVals);
   yLo *= 0.985; yHi *= 1.02;
-  const xsAll = [...efforts.map((p) => p.date), ...projLine.map((p) => p.date)].sort();
+  const xsAll = [...efforts.map((p) => p.date), ...projAll.map((p) => p.date)].sort();
   if (GOAL && xsAll.length) {
     traces.push({ type: "scatter", mode: "lines", name: `goal ${fmtDur(GOAL)}`, x: [xsAll[0], xsAll[xsAll.length - 1]], y: [GOAL, GOAL],
       line: { color: "#ffd23f", width: 2, dash: "dash" }, hoverinfo: "skip" });
@@ -697,5 +698,12 @@ function buildHeatmap() {
 
   fit((buttons[1] || buttons[0]).bounds);
 }
+
+// Info-icon tooltips: hover works via CSS; click toggles for touch devices.
+document.addEventListener("click", (e) => {
+  const info = e.target.closest(".info");
+  document.querySelectorAll(".info.show").forEach((i) => { if (i !== info) i.classList.remove("show"); });
+  if (info) { info.classList.toggle("show"); e.stopPropagation(); }
+});
 
 boot();

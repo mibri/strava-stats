@@ -63,6 +63,19 @@ main { max-width: 1180px; margin: 0 auto; padding: 24px; }
 }
 .card h2 { margin: 0 0 4px; font-size: 16px; letter-spacing: -.01em; }
 .hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+
+/* Info icon + hover/click tooltip for technical charts */
+.info { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+  margin-left: 7px; border: 1px solid var(--border); border-radius: 50%; color: var(--muted);
+  font-size: 10px; font-style: italic; font-family: Georgia, "Times New Roman", serif; cursor: help;
+  position: relative; vertical-align: middle; user-select: none; font-weight: 400; }
+.info:hover { color: var(--text); border-color: var(--muted); }
+.info::after { content: attr(data-tip); position: absolute; left: -4px; top: calc(100% + 8px);
+  width: 270px; max-width: 70vw; background: var(--bg-elev2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 12px; font: 400 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-style: normal; color: var(--text); letter-spacing: 0; text-transform: none; text-align: left;
+  box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 60; }
+.info:hover::after, .info.show::after { opacity: 1; }
 .chart { width: 100%; height: 340px; }
 .muted { color: var(--muted); }
 

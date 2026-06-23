@@ -446,7 +446,7 @@ def build_summary(runs: pd.DataFrame) -> dict:
         "daily_miles": _daily_miles(runs),
         "patterns": _patterns(runs),
         "hr_zones": _hr_zones(runs),
-        "projections": _projections(runs),
+        "projections": _fitness_projection(runs),
         "photos": [
             {"id": r["id"], "date": r["date"].strftime("%Y-%m-%d"), "name": str(r["name"]), "file": f}
             for _, r in runs.iterrows() for f in r["photos"]
@@ -519,13 +519,16 @@ PROJ_WINDOW_DAYS = 90
 
 
 def _fitness_projection(runs: pd.DataFrame) -> dict[str, list[dict]]:
-    """Strava-style predicted race times from a fitness MODEL, not a single effort.
+    """Predicted "what you could run" race times — race-calculator style.
 
-    At each run date we fit a power law  time = a · distance^b  to your best efforts
-    (every sub-distance) over the trailing 90 days, then predict each race distance
-    from that fit. Because it's a model over your whole speed/endurance curve, a PB
-    at any distance shifts every prediction, and a prediction need not equal the PB.
-    `b` (the fatigue/endurance exponent) is clamped to a sane 1.00–1.18.
+    At each run date we take your best efforts (≥1k, last 90 days), personalize the
+    endurance exponent `b` to your data (power-law fit, clamped 1.00–1.18), then for
+    each target distance take your FASTEST equivalent performance: Riegel-convert each
+    nearby effort to the target and keep the best. Only efforts within a 4× distance
+    band of the target are used, so e.g. the marathon comes from your long runs rather
+    than an over-optimistic mile. The result shows your potential — it sits at your PB
+    where that distance is already your strength, and beats it where another distance
+    implies headroom; it's never slower than a time you've actually run.
     """
     recs = [(r["date"], r["_best_efforts"]) for _, r in runs.iterrows()
             if not r.get("exclude_prog") and r["_best_efforts"]]
@@ -536,18 +539,24 @@ def _fitness_projection(runs: pd.DataFrame) -> dict[str, list[dict]]:
         for dd, eff in recs:
             if lo <= dd <= d:
                 for lbl, t in eff.items():
-                    if lbl not in best or t < best[lbl]:
-                        best[lbl] = t
-        if len(best) < 2:
+                    if EFFORT_M[lbl] >= 1000 and (lbl not in best or t < best[lbl]):
+                        best[lbl] = t  # drop sub-1k sprints; they distort the endurance curve
+        if not best:
             continue
-        X = np.log([EFFORT_M[l] for l in best])
-        Y = np.log([best[l] for l in best])
-        b = float(np.polyfit(X, Y, 1)[0])
-        b = min(1.18, max(1.00, b))
-        lna = float(np.mean(Y - b * X))  # refit intercept after clamping slope
-        for lbl in PROJ_TARGETS:
-            t = math.exp(lna + b * math.log(EFFORT_M[lbl]))
-            out[lbl].append({"date": d.strftime("%Y-%m-%d"), "proj_s": round(t)})
+        # personalized endurance exponent
+        if len(best) >= 2:
+            X = np.log([EFFORT_M[l] for l in best])
+            Y = np.log([best[l] for l in best])
+            b = min(1.18, max(1.00, float(np.polyfit(X, Y, 1)[0])))
+        else:
+            b = 1.06  # Riegel default
+        for tgt in PROJ_TARGETS:
+            T = EFFORT_M[tgt]
+            equivs = [t * (T / EFFORT_M[l]) ** b for l, t in best.items()
+                      if T / 4 <= EFFORT_M[l] <= T * 4]
+            if not equivs:
+                continue
+            out[tgt].append({"date": d.strftime("%Y-%m-%d"), "proj_s": round(min(equivs))})
     return out
 
 
