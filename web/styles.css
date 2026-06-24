@@ -32,16 +32,26 @@ body {
 ::-webkit-scrollbar-corner { background: transparent; }
 
 header {
-  position: sticky; top: 0; z-index: 50;
+  position: sticky; top: 0; z-index: 1000;
   background: rgba(15,17,21,.85); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   padding: 14px 24px; display: flex; align-items: center;
   justify-content: space-between; gap: 24px; flex-wrap: wrap;
 }
-.brand { display: flex; align-items: center; gap: 14px; }
-.logo { font-size: 30px; }
-header h1 { font-size: 20px; margin: 0; letter-spacing: -.02em; }
-header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.brand { display: flex; align-items: center; gap: 13px; }
+.mark {
+  width: 38px; height: 38px; display: grid; place-items: center; color: var(--accent);
+  background: linear-gradient(160deg, #20262f, #14171d);
+  border: 1px solid var(--border); border-radius: 11px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 2px 8px rgba(0,0,0,.3);
+}
+.mark svg { width: 23px; height: 23px; }
+header h1 {
+  font-size: 20px; margin: 0; font-weight: 700; letter-spacing: -.03em;
+  display: flex; gap: .32em; line-height: 1;
+}
+header h1 span { color: var(--muted); font-weight: 600; }
+header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 
 nav#tabs { display: flex; gap: 4px; background: var(--bg-elev); padding: 4px; border-radius: 10px; }
 .tab {
@@ -122,9 +132,31 @@ tbody tr:hover { background: var(--bg-elev2); }
 .pill.race { background: #ffd23f22; color: var(--race); }
 
 /* Maps */
-.map { width: 100%; height: 78vh; min-height: 520px; border-radius: 12px; overflow: hidden; }
+/* isolate: contain Leaflet's internal pane/control z-indexes (up to ~1000) so they
+   can't paint over the sticky header when the map scrolls under it. */
+.map { width: 100%; height: 78vh; min-height: 520px; border-radius: 12px; overflow: hidden; isolation: isolate; }
 .leaflet-container { background: #0b0d11; }
 #map .card { padding: 16px; }
+
+/* Map control bar: city selector (left) vs. overlay toggles (right) */
+.map-bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.map-bar .pr-controls { margin: 0; }
+.map-toggles { display: flex; align-items: center; gap: 8px; }
+.toggles-label { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-right: 2px; }
+.toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  padding: 6px 13px 6px 10px; border-radius: 999px; cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: .15s;
+}
+.toggle::before {
+  content: ""; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid #3a424f; background: var(--bg); transition: .15s; flex: none;
+}
+.toggle:hover:not(:disabled) { color: var(--text); border-color: #3a424f; }
+.toggle.active { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+.toggle.active::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.toggle:disabled { opacity: .45; cursor: default; }
 
 /* Segment trend panel */
 #segment-panel:empty { display: none; }

@@ -223,3 +223,7 @@ data/
 !data/.gitkeep
 *.zip
 .DS_Store
+# The web app's JS modules live in web/build/ — NOT a Python build dir, so re-include
+# them despite the generic "build/" rule far above (otherwise the site won't deploy).
+!web/build/
+!web/build/**

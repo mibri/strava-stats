@@ -11,9 +11,15 @@
 <body>
   <header>
     <div class="brand">
-      <span class="logo">🏃</span>
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 17c3.5 0 3.5-7 7-7s3.5 5 6 5 4-9 4-9" stroke="currentColor"
+                stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="20" cy="6" r="2.5" fill="currentColor"/>
+        </svg>
+      </span>
       <div>
-        <h1>Strava Stats</h1>
+        <h1>Strava<span>Stats</span></h1>
         <p id="subtitle">loading…</p>
       </div>
     </div>
@@ -108,10 +114,13 @@
       <div class="card">
         <h2>Everywhere I've run</h2>
         <p class="hint">All <span id="route-count"></span> GPS routes overlaid. Click a route to open the run.</p>
-        <div class="pr-controls" id="region-controls"></div>
-        <div class="pr-controls" style="margin-bottom:12px">
-          <button id="toggle-photos">📷 Show photo pins</button>
-          <button id="toggle-segments">🏃 Show segments</button>
+        <div class="map-bar">
+          <div class="pr-controls" id="region-controls"></div>
+          <div class="map-toggles">
+            <span class="toggles-label">Overlay</span>
+            <button id="toggle-photos" class="toggle" aria-pressed="false">📷 Photos</button>
+            <button id="toggle-segments" class="toggle" aria-pressed="false">🏃 Segments</button>
+          </div>
         </div>
         <div id="heatmap" class="map"></div>
         <div id="segment-panel"></div>
@@ -138,6 +147,7 @@
 
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="build/store.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

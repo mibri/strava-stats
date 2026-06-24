@@ -391,10 +391,11 @@ def build():
 
     (CLEAN / "summary.json").write_text(json.dumps(summary))
 
-    # ---- repeated segments (mined from GPS, SF only) ----
+    # ---- repeated segments (mined from GPS, home region only) ----
     from .segments import build_segments
     print("Detecting repeated segments…")
-    segs = build_segments(parsed, runs)
+    home_bounds = summary["regions"][0]["bounds"] if summary.get("regions") else None
+    segs = build_segments(parsed, runs, home_bounds)
     (CLEAN / "segments.json").write_text(json.dumps(segs))
     print(f"Wrote {len(segs)} segments")
 

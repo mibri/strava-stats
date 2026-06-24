@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Import · Strava Stats</title>
+  <link rel="preconnect" href="https://cdn.plot.ly" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .dropzone {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      background: var(--bg-elev); padding: 48px 24px; text-align: center;
+      cursor: pointer; transition: .15s;
+    }
+    .dropzone.over, .dropzone:hover { border-color: var(--accent); background: #191d24; }
+    .dz-icon { font-size: 40px; margin-bottom: 8px; }
+    .dropzone h2 { margin: 0 0 6px; }
+    .dropzone .hint { max-width: 460px; margin: 0 auto 16px; }
+    .btn-primary {
+      background: var(--accent); color: #fff; border: 0; border-radius: 9px;
+      padding: 9px 18px; font-weight: 600; font-size: 14px; cursor: pointer;
+    }
+    .preview-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; }
+    code { background: var(--bg-elev2); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+    .err { color: #ff7a7a; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 17c3.5 0 3.5-7 7-7s3.5 5 6 5 4-9 4-9" stroke="currentColor"
+                stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="20" cy="6" r="2.5" fill="currentColor"/>
+        </svg>
+      </span>
+      <div>
+        <h1>Strava<span>Stats</span></h1>
+        <p>Import your export</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel active">
+      <div id="dropzone" class="dropzone">
+        <div class="dz-icon">📦</div>
+        <h2>Drop your Strava export</h2>
+        <p class="hint">Drag your <code>export_*.zip</code> here, or click to choose. Everything is
+          processed in your browser — your data never leaves this page.</p>
+        <button id="pick" class="btn-primary" type="button">Choose file…</button>
+        <input id="file" type="file" accept=".zip,application/zip" hidden />
+      </div>
+      <p id="status" class="hint" style="margin-top:14px"></p>
+      <div id="preview"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+  <script src="build/store.js"></script>
+  <script type="module">
+    import { buildAll } from "./build/pipeline.js";
+
+    const $ = (s) => document.querySelector(s);
+    const dz = $("#dropzone"), statusEl = $("#status"), preview = $("#preview");
+    const setStatus = (html, err = false) => { statusEl.innerHTML = html; statusEl.classList.toggle("err", err); };
+
+    const phaseLabel = (p) => ({
+      unzip: "Unzipping export…",
+      tracks: `Parsing tracks ${p.done || 0} / ${p.total || 0}…`,
+      summary: "Localizing & building stats…",
+      segments: "Detecting repeated segments…",
+    }[p.phase] || "Working…");
+
+    async function handleFile(file) {
+      if (!file) return;
+      preview.innerHTML = "";
+      setStatus(`Reading <code>${file.name}</code> (${(file.size / 1e6).toFixed(1)} MB)…`);
+      try {
+        const buf = await file.arrayBuffer();
+        const t0 = performance.now();
+        const data = await buildAll(buf, (p) => setStatus(phaseLabel(p)));
+        await window.StravaStore.saveBuild(data);
+        const ms = ((performance.now() - t0) / 1000).toFixed(1);
+        setStatus(`Built your dashboard in ${ms}s — all in your browser, nothing uploaded.`);
+        success(data);
+      } catch (e) {
+        setStatus(`Couldn't process that export: ${e.message}`, true);
+        console.error(e);
+      }
+    }
+
+    function success(data) {
+      const t = data.summary.totals;
+      const stat = (v, l) => `<div class="stat"><div class="val">${v}</div><div class="lbl">${l}</div></div>`;
+      preview.innerHTML = `
+        <div class="card">
+          <h2>Ready ✓</h2>
+          <p class="hint">Parsed <b>${t.runs}</b> runs · <b>${data.routes.features.length}</b> GPS routes ·
+            <b>${data.segments.length}</b> repeated segments.</p>
+          <div class="preview-stats">
+            ${stat(t.runs, "runs")}
+            ${stat(t.miles.toLocaleString(), "miles")}
+            ${stat(t.hours.toLocaleString(), "hours")}
+            ${stat(t.first + " → " + t.last, "span")}
+          </div>
+          <p><a class="btn-primary" href="index.html" style="display:inline-block;text-decoration:none">Open dashboard →</a></p>
+        </div>`;
+    }
+
+    $("#pick").onclick = () => $("#file").click();
+    $("#file").onchange = (e) => handleFile(e.target.files[0]);
+    dz.onclick = (e) => { if (e.target.id !== "pick") $("#file").click(); };
+    ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+    dz.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+  </script>
+</body>
+</html>

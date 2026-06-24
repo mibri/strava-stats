@@ -74,12 +74,28 @@ function rolling(arr, win) {
 
 /* ---------- boot ---------- */
 async function boot() {
-  const [summary, runs, routes, segments] = await Promise.all([
-    fetch(`${DATA}/summary.json`).then((r) => r.json()),
-    fetch(`${DATA}/runs.json`).then((r) => r.json()),
-    fetch(`${DATA}/routes.geojson`).then((r) => r.json()).catch(() => null),
-    fetch(`${DATA}/segments.json`).then((r) => r.json()).catch(() => []),
-  ]);
+  // Data source: an in-browser build (dropped export, cached in IndexedDB) takes
+  // precedence; otherwise fetch the Python pipeline's files from data/clean.
+  let build = null;
+  if (window.StravaStore) { try { build = await window.StravaStore.loadBuild(); } catch (e) { /* none */ } }
+  let summary, runs, routes, segments;
+  if (build) {
+    ({ summary, runs, routes, segments } = build);
+  } else {
+    try {
+      [summary, runs, routes, segments] = await Promise.all([
+        fetch(`${DATA}/summary.json`).then((r) => r.json()),
+        fetch(`${DATA}/runs.json`).then((r) => r.json()),
+        fetch(`${DATA}/routes.geojson`).then((r) => r.json()).catch(() => null),
+        fetch(`${DATA}/segments.json`).then((r) => r.json()).catch(() => []),
+      ]);
+    } catch (e) {
+      // No local data and no build → send the user to the importer.
+      location.href = "import.html";
+      return;
+    }
+  }
+  state.fromBuild = !!build;
   state.summary = summary; state.runs = runs; state.routes = routes; state.points = summary.points || [];
   state.segments = segments || [];
   runs.forEach((r) => { const d = r.date.slice(0, 10); if (!state.dateById[d]) state.dateById[d] = r.id; });
@@ -560,7 +576,9 @@ let detailMap = null;
 async function openRun(id) {
   const r = state.runs.find((x) => x.id === id);
   if (!r) return;
-  const d = await fetch(`${DATA}/streams/${id}.json`).then((x) => x.json()).catch(() => null);
+  const d = state.fromBuild && window.StravaStore
+    ? await window.StravaStore.loadStream(id)
+    : await fetch(`${DATA}/streams/${id}.json`).then((x) => x.json()).catch(() => null);
   const be = d && d.best_efforts || {};
   const beHtml = Object.entries(be).map(([k, v]) => `<span class="be">${k} <b>${v.t}</b></span>`).join("");
   const photos = (d && d.photos) || [];
@@ -680,7 +698,7 @@ function buildHeatmap() {
   state.routes.features.forEach((f) => { routeById[f.properties.id] = f.geometry.coordinates; });
   $("#toggle-photos").onclick = () => {
     const btn = $("#toggle-photos");
-    if (photoLayer) { map.removeLayer(photoLayer); photoLayer = null; btn.textContent = "📷 Show photo pins"; btn.classList.remove("active"); return; }
+    if (photoLayer) { map.removeLayer(photoLayer); photoLayer = null; btn.classList.remove("active"); btn.setAttribute("aria-pressed", "false"); return; }
     photoLayer = L.layerGroup();
     const byRun = {};
     (state.summary.photos || []).forEach((p) => { (byRun[p.id] ||= []).push(p); });
@@ -695,7 +713,7 @@ function buildHeatmap() {
       });
     });
     photoLayer.addTo(map);
-    btn.textContent = "📷 Hide photo pins"; btn.classList.add("active");
+    btn.classList.add("active"); btn.setAttribute("aria-pressed", "true");
   };
 
   // Repeated-segments overlay. Dims the orange heatmap and draws each detected
@@ -708,11 +726,11 @@ function buildHeatmap() {
       map.removeLayer(segLayer); segLayer = null;
       all.forEach((pl) => pl.setStyle({ opacity: 0.3 }));
       $("#segment-panel").innerHTML = "";
-      btn.textContent = "🏃 Show segments"; btn.classList.remove("active");
+      btn.classList.remove("active"); btn.setAttribute("aria-pressed", "false");
       return;
     }
     const segs = state.segments || [];
-    if (!segs.length) { btn.textContent = "🏃 No segments found"; return; }
+    if (!segs.length) { btn.disabled = true; btn.title = "No repeated segments found"; return; }
     all.forEach((pl) => pl.setStyle({ opacity: 0.05 }));
     segLayer = L.layerGroup();
     segs.forEach((s) => {
@@ -724,24 +742,33 @@ function buildHeatmap() {
       pl.bindTooltip(`${s.name} · ${s.n_runs}×`, { sticky: true });
     });
     segLayer.addTo(map);
-    btn.textContent = "🏃 Hide segments"; btn.classList.add("active");
+    btn.classList.add("active"); btn.setAttribute("aria-pressed", "true");
   };
 
   fit((buttons[1] || buttons[0]).bounds);
 }
 
 // Trend panel for one segment: EF headline + pace & HR below, each effort a dot
-// colored by run type (click a dot to open that run).
+// colored by run type (click a dot to open that run). If the segment was also run
+// the other way, a direction toggle flips between the two (grade differs, so they
+// trend separately).
+const SEG_TREND = { improving: ["▲ improving", "#45c08a"], declining: ["▼ declining", "#ec5fa6"], flat: ["▬ flat", "#8b94a3"] };
+
 function showSegmentPanel(seg) {
   const panel = $("#segment-panel");
-  const efs = seg.efforts;
-  const TREND = { improving: ["▲ improving", "#45c08a"], declining: ["▼ declining", "#ec5fa6"], flat: ["▬ flat", "#8b94a3"] };
-  const [tlabel, tcolor] = TREND[seg.trend.label] || TREND.flat;
+  // Both directions share one geometry; build a pickable list (primary first).
+  const dirs = [{ dir_label: seg.dir_label, n_runs: seg.n_runs, trend: seg.trend, efforts: seg.efforts }];
+  if (seg.reverse) dirs.push(seg.reverse);
+
+  const toggle = dirs.length > 1
+    ? `<div class="pr-controls seg-dirs">${dirs.map((d, i) =>
+        `<button class="${i === 0 ? "active" : ""}" data-d="${i}">${d.dir_label} (${d.n_runs}×)</button>`).join("")}</div>`
+    : "";
   panel.innerHTML = `<div class="card seg-card">
     <button class="seg-close" id="seg-close">✕</button>
     <h2>${escapeHtml(seg.name)}</h2>
-    <p class="hint">${seg.length_mi} mi · run ${seg.n_runs}× · efficiency
-      <span style="color:${tcolor};font-weight:600">${tlabel}</span></p>
+    <p class="hint" id="seg-sub"></p>
+    ${toggle}
     <div id="seg-ef" style="height:210px"></div>
     <div class="seg-mini">
       <div><h3>Pace</h3><div id="seg-pace" style="height:160px"></div></div>
@@ -752,32 +779,45 @@ function showSegmentPanel(seg) {
   $("#seg-close").onclick = () => { panel.innerHTML = ""; };
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-  const x = efs.map((e) => e.date);
-  const customdata = efs.map((e) => e.id);
-  const marker = () => ({
-    size: 9, color: efs.map((e) => TYPE_COLORS[e.type] || "#888"),
-    symbol: efs.map((e) => TYPE_SYMBOLS[e.type] || "circle"),
-    line: { width: 1, color: "#11151c" },
-  });
-  const dots = (y, fmt) => ({
-    type: "scatter", mode: "markers", x, y, marker: marker(), customdata,
-    text: efs.map((e, i) => `${e.date} · ${e.type} · ${fmt(e, i)}`), hovertemplate: "%{text}<extra></extra>",
-  });
+  const render = (d) => {
+    const efs = d.efforts;
+    const [tlabel, tcolor] = SEG_TREND[d.trend.label] || SEG_TREND.flat;
+    $("#seg-sub").innerHTML = `${seg.length_mi} mi · heading ${d.dir_label} · run ${d.n_runs}× · efficiency
+      <span style="color:${tcolor};font-weight:600">${tlabel}</span>`;
+    const x = efs.map((e) => e.date);
+    const customdata = efs.map((e) => e.id);
+    const marker = () => ({
+      size: 9, color: efs.map((e) => TYPE_COLORS[e.type] || "#888"),
+      symbol: efs.map((e) => TYPE_SYMBOLS[e.type] || "circle"),
+      line: { width: 1, color: "#11151c" },
+    });
+    const dots = (y, fmt) => ({
+      type: "scatter", mode: "markers", x, y, marker: marker(), customdata,
+      text: efs.map((e, i) => `${e.date} · ${e.type} · ${fmt(e, i)}`), hovertemplate: "%{text}<extra></extra>",
+    });
 
-  const efy = efs.map((e) => e.ef);
-  plot("seg-ef", [
-    dots(efy, (e) => `EF ${e.ef != null ? e.ef.toFixed(4) : "—"}`),
-    { type: "scatter", mode: "lines", x, y: rolling(efy, 5), line: { color: "#ffd23f", width: 2 }, hoverinfo: "skip", showlegend: false },
-  ], { margin: { l: 56, r: 16, t: 8, b: 34 }, xaxis: { gridcolor: "#2a313c" },
-       yaxis: { title: "EF (speed ÷ HR)", gridcolor: "#2a313c" }, height: 210 }, true);
+    const efy = efs.map((e) => e.ef);
+    plot("seg-ef", [
+      dots(efy, (e) => `EF ${e.ef != null ? e.ef.toFixed(4) : "—"}`),
+      { type: "scatter", mode: "lines", x, y: rolling(efy, 5), line: { color: "#ffd23f", width: 2 }, hoverinfo: "skip", showlegend: false },
+    ], { margin: { l: 56, r: 16, t: 8, b: 34 }, xaxis: { gridcolor: "#2a313c" },
+         yaxis: { title: "EF (speed ÷ HR)", gridcolor: "#2a313c" }, height: 210 }, true);
 
-  const py = efs.map((e) => e.pace_s);
-  plot("seg-pace", [dots(py, (e) => `${fmtPace(e.pace_s)}/mi`)],
-    { margin: { l: 52, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: paceAxis(py), height: 160 }, true);
+    const py = efs.map((e) => e.pace_s);
+    plot("seg-pace", [dots(py, (e) => `${fmtPace(e.pace_s)}/mi`)],
+      { margin: { l: 52, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: paceAxis(py), height: 160 }, true);
 
-  const hy = efs.map((e) => e.hr);
-  plot("seg-hr", [dots(hy, (e) => `${e.hr != null ? Math.round(e.hr) : "—"} bpm`)],
-    { margin: { l: 46, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: { gridcolor: "#2a313c" }, height: 160 }, true);
+    const hy = efs.map((e) => e.hr);
+    plot("seg-hr", [dots(hy, (e) => `${e.hr != null ? Math.round(e.hr) : "—"} bpm`)],
+      { margin: { l: 46, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: { gridcolor: "#2a313c" }, height: 160 }, true);
+  };
+
+  panel.querySelectorAll(".seg-dirs button").forEach((b) => (b.onclick = () => {
+    panel.querySelectorAll(".seg-dirs button").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    render(dirs[+b.dataset.d]);
+  }));
+  render(dirs[0]);
 }
 
 // Info-icon tooltips: hover works via CSS; click toggles for touch devices.
