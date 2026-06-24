@@ -23,6 +23,12 @@
     .preview-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; }
     code { background: var(--bg-elev2); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
     .err { color: #ff7a7a; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+    .btn-ghost {
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      border-radius: 9px; padding: 9px 16px; font-weight: 600; font-size: 14px; cursor: pointer;
+    }
+    .btn-ghost:hover { color: var(--text); border-color: #3a424f; }
   </style>
 </head>
 <body>
@@ -106,8 +112,34 @@
             ${stat(t.hours.toLocaleString(), "hours")}
             ${stat(t.first + " → " + t.last, "span")}
           </div>
-          <p><a class="btn-primary" href="index.html" style="display:inline-block;text-decoration:none">Open dashboard →</a></p>
+          <div class="actions">
+            <a class="btn-primary" href="index.html" style="text-decoration:none">Open dashboard →</a>
+          </div>
         </div>`;
+    }
+
+    // If a build is already cached, surface it with Open / Clear actions. Dropping a
+    // new export above simply replaces it.
+    async function showExisting() {
+      const b = await window.StravaStore.loadBuild();
+      if (!b) return;
+      const when = b.builtAt ? new Date(b.builtAt).toLocaleDateString() : "earlier";
+      preview.innerHTML = `
+        <div class="card">
+          <h2>A dashboard is already loaded</h2>
+          <p class="hint"><b>${b.summary.totals.runs}</b> runs · <b>${b.summary.totals.miles.toLocaleString()}</b> mi ·
+            imported ${when}. Drop a new export above to replace it.</p>
+          <div class="actions">
+            <a class="btn-primary" href="index.html" style="text-decoration:none">Open dashboard →</a>
+            <button id="clear-btn" class="btn-ghost" type="button">Clear data</button>
+          </div>
+        </div>`;
+      document.getElementById("clear-btn").onclick = async () => {
+        if (!confirm("Clear the imported dashboard from this browser?")) return;
+        await window.StravaStore.clearBuild();
+        preview.innerHTML = "";
+        setStatus("Cleared. Drop an export above to import again.");
+      };
     }
 
     $("#pick").onclick = () => $("#file").click();
@@ -116,6 +148,7 @@
     ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
     ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
     dz.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+    showExisting();
   </script>
 </body>
 </html>

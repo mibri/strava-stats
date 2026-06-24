@@ -53,6 +53,13 @@ header h1 {
 header h1 span { color: var(--muted); font-weight: 600; }
 header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 
+.nav-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.import-link {
+  display: inline-flex; align-items: center; gap: 5px; text-decoration: none;
+  color: var(--muted); font-size: 13px; font-weight: 600;
+  padding: 7px 13px; border-radius: 8px; border: 1px solid var(--border);
+}
+.import-link:hover { color: var(--text); border-color: #3a424f; }
 nav#tabs { display: flex; gap: 4px; background: var(--bg-elev); padding: 4px; border-radius: 10px; }
 .tab {
   border: 0; background: transparent; color: var(--muted);

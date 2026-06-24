@@ -112,9 +112,6 @@ async function boot() {
   }
   runs.forEach((r) => { const d = r.date.slice(0, 10); if (!state.dateById[d]) state.dateById[d] = r.id; });
 
-  const t = summary.totals;
-  $("#subtitle").textContent = `${num(t.runs)} runs · ${num(t.miles)} mi · ${t.first} → ${t.last}`;
-
   renderOverview();
   setupTimeframe();
   renderProgression();
