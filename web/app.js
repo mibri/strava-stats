@@ -20,6 +20,9 @@ const state = { runs: [], summary: null, routes: null, points: [],
 /* ---------- helpers ---------- */
 const $ = (s) => document.querySelector(s);
 const fmtPace = (s) => (s == null || !isFinite(s) ? "—" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
+// Resolve a "media/<file>" path to an image URL: an object URL from the in-browser
+// build (photos cached in IndexedDB), or data/media when running off the Python build.
+const mediaUrl = (file) => (state.fromBuild ? (state.photoUrls[file] || "") : `${MEDIA}/${file.replace("media/", "")}`);
 const fmtDur = (s) => {
   if (s == null) return "—";
   s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
@@ -98,6 +101,15 @@ async function boot() {
   state.fromBuild = !!build;
   state.summary = summary; state.runs = runs; state.routes = routes; state.points = summary.points || [];
   state.segments = segments || [];
+
+  // For an in-browser build, turn the cached photo blobs into object URLs up front.
+  state.photoUrls = {};
+  if (build && window.StravaStore) {
+    try {
+      const blobs = await window.StravaStore.loadAllPhotos();
+      for (const f in blobs) state.photoUrls[f] = URL.createObjectURL(blobs[f]);
+    } catch (e) { /* photos are optional */ }
+  }
   runs.forEach((r) => { const d = r.date.slice(0, 10); if (!state.dateById[d]) state.dateById[d] = r.id; });
 
   const t = summary.totals;
@@ -243,7 +255,7 @@ function renderPhotoStrip() {
   const shuffled = [...photos].sort(() => Math.random() - 0.5).slice(0, 30);
   state.lbSet = shuffled;
   $("#photo-strip").innerHTML = shuffled.map((p, i) =>
-    `<img src="${MEDIA}/${p.file.replace("media/", "")}" loading="lazy" data-i="${i}" title="${escapeHtml(p.name)} · ${p.date}" />`).join("");
+    `<img src="${mediaUrl(p.file)}" loading="lazy" data-i="${i}" title="${escapeHtml(p.name)} · ${p.date}" />`).join("");
   $("#photo-strip").querySelectorAll("img").forEach((img) =>
     (img.onclick = () => openLightbox(state.lbSet, +img.dataset.i)));
 }
@@ -252,7 +264,7 @@ function renderPhotoStrip() {
 function openLightbox(set, i) {
   state.lbCur = { set, i };
   const p = set[i];
-  $("#lb-img").src = `${MEDIA}/${p.file.replace("media/", "")}`;
+  $("#lb-img").src = mediaUrl(p.file);
   $("#lb-cap").innerHTML = `${escapeHtml(p.name)} · ${p.date} — <a data-id="${p.id}">open run ↗</a>`;
   $("#lb-cap a").onclick = () => { closeLightbox(); openRun(p.id); };
   $("#lightbox").classList.remove("hidden");
@@ -584,7 +596,7 @@ async function openRun(id) {
   const photos = (d && d.photos) || [];
   const photoSet = photos.map((f) => ({ file: f, name: r.name, date: r.date.slice(0, 10), id: r.id }));
   const photoHtml = photos.length
-    ? `<div class="detail-photos">${photos.map((f, i) => `<img src="${MEDIA}/${f.replace("media/", "")}" data-i="${i}" />`).join("")}</div>` : "";
+    ? `<div class="detail-photos">${photos.map((f, i) => `<img src="${mediaUrl(f)}" data-i="${i}" />`).join("")}</div>` : "";
 
   $("#modal-body").innerHTML = `
     <h2>${escapeHtml(r.name)}</h2>
@@ -707,7 +719,7 @@ function buildHeatmap() {
       ps.forEach((p, i) => {
         const frac = (i + 0.5) / ps.length;               // spread along the route
         const c = route[Math.floor(frac * (route.length - 1))];
-        const thumb = `${MEDIA}/${p.file.replace("media/", "")}`;
+        const thumb = mediaUrl(p.file);
         const icon = L.divIcon({ className: "", html: `<img src="${thumb}" style="width:34px;height:34px;border-radius:6px;border:2px solid #fc5200;object-fit:cover">`, iconSize: [34, 34] });
         L.marker([c[1], c[0]], { icon }).on("click", () => openLightbox(ps, i)).addTo(photoLayer);
       });

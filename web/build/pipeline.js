@@ -322,8 +322,21 @@ export async function buildAll(arrayBuffer, onProgress) {
     };
   }
 
+  // Pull the referenced photo bytes out of the export's media/ folder so they can be
+  // cached and shown (the app otherwise loads them from data/media, which a deployed
+  // static site doesn't have).
+  const byBase = {};
+  for (const k of Object.keys(files)) byBase[k.split("/").pop()] = k;
+  const photos = {};
+  for (const r of runs) {
+    for (const p of r.photos || []) {
+      const key = files[p] ? p : byBase[p.split("/").pop()];
+      if (key && files[key]) photos[p] = files[key];
+    }
+  }
+
   const gpsIds = new Set(routes.features.map((f) => f.properties.id));
-  return { summary, runs: runsTable(runs, gpsIds), routes, segments, streams: streamDetails };
+  return { summary, runs: runsTable(runs, gpsIds), routes, segments, streams: streamDetails, photos };
 }
 
 const fmtTimeStr = (s) => {
