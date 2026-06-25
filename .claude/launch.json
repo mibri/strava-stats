@@ -4,8 +4,9 @@
     {
       "name": "strava-stats",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["web/serve.py", "8000"],
-      "port": 8000
+      "runtimeArgs": ["web/serve.py"],
+      "port": 8000,
+      "autoPort": true
     }
   ]
 }

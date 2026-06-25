@@ -3,6 +3,7 @@
 Serves the repo root so the page (web/index.html) can fetch ../data/clean/*.
 """
 import http.server
+import os
 import socketserver
 import sys
 import webbrowser
@@ -10,7 +11,8 @@ from functools import partial
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+# Port: positional arg wins, else $PORT (lets a launcher assign a free port), else 8000.
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8000))
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

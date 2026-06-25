@@ -4,6 +4,10 @@
  */
 (function () {
   const DB = "strava-stats", VER = 2;
+  // Bump when the built data SHAPE changes (e.g. per-run `traj` added for drawn segments)
+  // so a stale cached build is ignored and the user is sent to re-import, rather than the
+  // dashboard silently running on data that's missing fields.
+  const BUILD_VERSION = 3;
   const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", heic: "image/heic" };
   const mime = (file) => MIME[(file.split(".").pop() || "").toLowerCase()] || "image/jpeg";
 
@@ -26,7 +30,8 @@
     return new Promise((res, rej) => {
       const tx = db.transaction(["meta", "streams", "photos"], "readwrite");
       tx.objectStore("meta").put(
-        { summary: data.summary, runs: data.runs, routes: data.routes, segments: data.segments, builtAt: Date.now() },
+        { summary: data.summary, runs: data.runs, routes: data.routes, segments: data.segments,
+          buildVersion: BUILD_VERSION, builtAt: Date.now() },
         "dataset");
       const ss = tx.objectStore("streams");
       ss.clear();
@@ -61,7 +66,9 @@
 
   window.StravaStore = {
     saveBuild,
-    loadBuild: () => read("meta", "dataset").catch(() => null),
+    // Ignore a cached build from an older schema so the dashboard never renders on data
+    // missing fields the current code expects — falls through to a fresh import.
+    loadBuild: () => read("meta", "dataset").then((d) => (d && d.buildVersion === BUILD_VERSION ? d : null)).catch(() => null),
     loadStream: (id) => read("streams", id).catch(() => null),
     loadAllPhotos,
     clearBuild: () => open().then((db) => new Promise((res) => {

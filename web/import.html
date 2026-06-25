@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Import · Strava Stats</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <script>
     (function () {
       if ((localStorage.getItem("theme") || "dark") === "light")
@@ -23,7 +24,9 @@
       background: var(--bg-elev); padding: 48px 24px; text-align: center;
       cursor: pointer; transition: .15s;
     }
-    .dropzone.over, .dropzone:hover { border-color: var(--accent); background: #191d24; }
+    .dropzone.over, .dropzone:hover { border-color: var(--accent); background: var(--bg-elev2); }
+    .sample-cta { text-align: center; margin: 18px 0 0; color: var(--muted); font-size: 14px; }
+    .sample-cta a { color: var(--accent); font-weight: 600; }
     .dz-icon { font-size: 40px; margin-bottom: 8px; }
     .dropzone h2 { margin: 0 0 6px; }
     .dropzone .hint { max-width: 460px; margin: 0 auto 16px; }
@@ -75,6 +78,8 @@
         <button id="pick" class="btn-primary" type="button">Choose file…</button>
         <input id="file" type="file" accept=".zip,application/zip" hidden />
       </div>
+      <p class="sample-cta">Just looking? <a href="index.html?sample=1">View sample data →</a>
+        — explore the full dashboard with real runs, no export needed.</p>
       <p id="status" class="hint" style="margin-top:14px"></p>
       <div id="preview"></div>
 

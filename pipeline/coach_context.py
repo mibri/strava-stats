@@ -5,13 +5,16 @@ fixed goals/constraints live in coach/goal.md (hand-edited via /goal).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
-COACH = ROOT / "coach"
+# Env-overridable so a sandbox build (the bundled sample) doesn't overwrite the real
+# coach context.
+COACH = Path(os.environ.get("STRAVA_COACH_DIR") or ROOT / "coach")
 
 
 def _pace(sec):

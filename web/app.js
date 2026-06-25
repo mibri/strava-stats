@@ -1,6 +1,8 @@
-/* Strava Stats dashboard. Reads the pipeline's JSON from ../data/clean/. */
-const DATA = "../data/clean";
-const MEDIA = "../data/media";
+/* Strava Stats dashboard. Reads the pipeline's JSON from ../data/clean/ — or the bundled
+ * sample under web/sample/ when opened with ?sample=1 (a no-export demo for new visitors). */
+const SAMPLE = new URLSearchParams(location.search).has("sample");
+const DATA = SAMPLE ? "sample" : "../data/clean";
+const MEDIA = SAMPLE ? "sample/media" : "../data/media";
 const TYPE_COLORS = {
   easy: "#4f93ff", long: "#ec5fa6", workout: "#fc5200",
   recovery: "#45c08a", race: "#ffd23f",
@@ -88,7 +90,7 @@ async function boot() {
   // Data source: an in-browser build (dropped export, cached in IndexedDB) takes
   // precedence; otherwise fetch the Python pipeline's files from data/clean.
   let build = null;
-  if (window.StravaStore) { try { build = await window.StravaStore.loadBuild(); } catch (e) { /* none */ } }
+  if (window.StravaStore && !SAMPLE) { try { build = await window.StravaStore.loadBuild(); } catch (e) { /* none */ } }
   let summary, runs, routes, segments;
   if (build) {
     ({ summary, runs, routes, segments } = build);
@@ -125,6 +127,17 @@ async function boot() {
   renderProgression();
   renderRuns();
   setupTabs();
+  if (SAMPLE) showSampleBanner();
+}
+
+// Demo banner: make it obvious these aren't your runs, with a one-click path to import.
+function showSampleBanner() {
+  const b = document.createElement("div");
+  b.className = "sample-banner";
+  b.innerHTML = `<span><b>Sample data</b> — a fictional runner, so you can explore before importing your own.</span>
+    <a class="hdr-btn" href="import.html">↥ Import your Strava export</a>`;
+  document.body.prepend(b);
+  document.body.classList.add("has-sample-banner");
 }
 
 /* ---------- tabs ---------- */
@@ -141,6 +154,10 @@ function setupTabs() {
       window.dispatchEvent(new Event("resize"));
     };
   });
+  // Clicking the logo/wordmark returns to the Overview tab.
+  const brand = $("#brand-home");
+  const goHome = () => document.querySelector('.tab[data-tab="overview"]').click();
+  if (brand) { brand.onclick = goHome; brand.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goHome(); } }; }
 }
 
 /* ---------- timeframe ---------- */
@@ -215,7 +232,10 @@ function renderCalendar() {
   const days = state.summary.daily_miles;
   if (!days || !days.length) { $("#calendar").innerHTML = `<span class="muted">No data</span>`; return; }
   const max = Math.max(...days.map((d) => d.miles));
-  const ramp = ["#5c2e12", "#9c4410", "#d65a10", "#fc5200"];
+  // Light mode needs a pale→deep ramp (more miles = darker); the dark-mode ramp goes the
+  // other way (more miles = brighter), which would read inverted on a white background.
+  const light = document.documentElement.getAttribute("data-theme") === "light";
+  const ramp = light ? ["#ffd2b8", "#ff9e66", "#f0631b", "#c43c00"] : ["#5c2e12", "#9c4410", "#d65a10", "#fc5200"];
   const color = (mi) => {
     if (mi <= 0) return "var(--bg-elev2)";
     const r = mi / max;
@@ -223,14 +243,14 @@ function renderCalendar() {
   };
   const byDate = Object.fromEntries(days.map((d) => [d.date, d.miles]));
   const years = [...new Set(days.map((d) => d.date.slice(0, 4)))].sort().reverse();
-  const dow = ["", "M", "", "W", "", "F", ""];
+  const dow = ["M", "", "W", "", "F", "", ""];
   const today = new Date();
 
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const blocks = years.map((yr) => {
-    const start = new Date(yr, 0, 1); start.setDate(start.getDate() - start.getDay());   // back to Sunday
-    const end = new Date(yr, 11, 31); end.setDate(end.getDate() + (6 - end.getDay()));    // forward to Saturday
+    const start = new Date(yr, 0, 1); start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // back to Monday
+    const end = new Date(yr, 11, 31); end.setDate(end.getDate() + ((7 - end.getDay()) % 7));        // forward to Sunday
     const cells = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       if (d.getFullYear() != yr || d > today) { cells.push(`<div class="cal-cell future"></div>`); continue; }
@@ -367,14 +387,18 @@ function renderProgression() {
       line: { color: "#ffd23f", width: 3 } },
   ], { yaxis: { title: "steps / min", gridcolor: GRID } }, true);
 
-  // Heat vs pace
-  const hot = pts.filter((p) => p.temp_f != null && ["easy", "long", "recovery"].includes(p.type));
-  plot("chart-temp", [{
-    type: "scatter", mode: "markers", x: hot.map((p) => p.temp_f), y: hot.map((p) => p.pace_s),
-    marker: { color: "#fc5200", size: 7, opacity: 0.6 }, customdata: hot.map((p) => p.id),
-    text: hot.map((p) => `${p.date} · ${Math.round(p.temp_f)}°F · ${fmtPace(p.pace_s)}/mi`),
-    hovertemplate: "%{text}<extra></extra>",
-  }], { xaxis: { title: "temperature (°F)", gridcolor: GRID }, yaxis: { title: "pace (/mi)", ...paceAxis(hot.map((p) => p.pace_s)) } }, true);
+  // Heat vs pace — all runs, one trace per type so the bands stay separable.
+  const hot = pts.filter((p) => p.temp_f != null && p.pace_s != null);
+  const hotTraces = TYPE_ORDER.filter((ty) => hot.some((p) => p.type === ty)).map((ty) => {
+    const h = hot.filter((p) => p.type === ty);
+    return {
+      type: "scatter", mode: "markers", name: ty, x: h.map((p) => p.temp_f), y: h.map((p) => p.pace_s),
+      marker: { color: TYPE_COLORS[ty], size: 7, opacity: 0.6, symbol: TYPE_SYMBOLS[ty], line: { color: "#0f1115", width: 0.5 } },
+      customdata: h.map((p) => p.id), text: h.map((p) => `${p.date} · ${Math.round(p.temp_f)}°F · ${fmtPace(p.pace_s)}/mi`),
+      hovertemplate: `%{text}<extra>${ty}</extra>`,
+    };
+  });
+  plot("chart-temp", hotTraces, { xaxis: { title: "temperature (°F)", gridcolor: GRID }, yaxis: { title: "pace (/mi)", ...paceAxis(hot.map((p) => p.pace_s)) } }, true);
 
   // When you run
   drawPatterns();
@@ -407,15 +431,21 @@ function drawEF(id, pts, key, ytitle) {
 }
 
 function drawPatterns() {
-  const p = state.summary.patterns;
+  // Computed from the runs in the selected timeframe (not the all-time summary) so the
+  // day-of-week and hour-of-day counts track the timeframe picker.
   const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const dowRuns = names.map((_, i) => (p.dow.find((d) => d.dow === i) || {}).runs || 0);
+  const dowRuns = Array(7).fill(0), hours = Array(24).fill(0);
+  state.runs.filter((r) => inFrame(r.date)).forEach((r) => {
+    const d = new Date(r.date.replace(" ", "T"));   // local; ISO 'T' keeps Safari happy
+    if (isNaN(d)) return;
+    dowRuns[(d.getDay() + 6) % 7]++;                 // Mon=0 … Sun=6
+    hours[d.getHours()]++;
+  });
   plot("chart-dow", [{
     type: "bar", x: names, y: dowRuns, marker: { color: "#4f93ff" },
     hovertemplate: "%{x}<br>%{y} runs<extra></extra>",
   }], { margin: { l: 40, r: 12, t: 10, b: 32 }, yaxis: { title: "runs", gridcolor: GRID } });
 
-  const hours = Array.from({ length: 24 }, (_, h) => (p.hours.find((x) => x.hour === h) || {}).runs || 0);
   plot("chart-hour", [{
     type: "bar", x: hours.map((_, h) => `${h}`), y: hours, marker: { color: "#fc5200" },
     hovertemplate: "%{x}:00<br>%{y} runs<extra></extra>",
@@ -1192,6 +1222,7 @@ function showSegmentPanel(seg) {
     <h2>${escapeHtml(seg.name)}</h2>
     <p class="hint" id="seg-sub"></p>
     ${toggle}
+    <div class="seg-stats" id="seg-stats"></div>
     <div id="seg-ef" style="height:210px"></div>
     <div class="seg-mini">
       <div><h3>Pace</h3><div id="seg-pace" style="height:160px"></div></div>
@@ -1206,6 +1237,19 @@ function showSegmentPanel(seg) {
     const [tlabel, tcolor] = SEG_TREND[d.trend.label] || SEG_TREND.flat;
     $("#seg-sub").innerHTML = `${seg.length_mi} mi · heading ${d.dir_label} · run ${d.n_runs}× · efficiency
       <span style="color:${tcolor};font-weight:600">${tlabel}</span>`;
+
+    // Summary strip: the segment "PR" plus typical pace/effort across all efforts.
+    const med = (a) => { const s = a.filter((x) => x != null).sort((p, q) => p - q);
+      return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
+    const best = efs.reduce((b, e) => (e.time_s != null && (!b || e.time_s < b.time_s) ? e : b), null);
+    const medPace = med(efs.map((e) => e.pace_s));
+    const avgHr = med(efs.map((e) => e.hr));
+    $("#seg-stats").innerHTML = [
+      stat(d.n_runs, "efforts"),
+      stat(best ? fmtDur(best.time_s) : "—", best ? `best · ${best.date.slice(5)}` : "best"),
+      stat(medPace ? `${fmtPace(medPace)}` : "—", "median pace"),
+      stat(avgHr ? Math.round(avgHr) : "—", "median HR"),
+    ].join("");
     const x = efs.map((e) => e.date);
     const customdata = efs.map((e) => e.id);
     const marker = () => ({

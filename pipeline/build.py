@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -36,8 +37,10 @@ EFFORT_M = {label: m for m, label in BEST_EFFORT_DISTANCES}
 from .tracks import load_track
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
-CLEAN = DATA / "clean"
+# Input/output dirs are env-overridable so an alternate dataset (e.g. the bundled sample
+# via pipeline/make_sample.py) can build into its own sandbox without touching data/.
+DATA = Path(os.environ.get("STRAVA_DATA_DIR") or ROOT / "data")
+CLEAN = Path(os.environ.get("STRAVA_CLEAN_DIR") or DATA / "clean")
 STREAMS = CLEAN / "streams"
 
 # Distances we track for PR progression.

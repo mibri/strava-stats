@@ -6,6 +6,7 @@ the first run and we stay polite to the free Nominatim service.
 from __future__ import annotations
 
 import json
+import os
 import ssl
 import time
 import urllib.parse
@@ -14,7 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # Kept outside data/clean so it survives a clean rebuild (avoids re-hitting Nominatim).
-CACHE = ROOT / "data" / "geocode_cache.json"
+# Env-overridable so a sandbox build (the bundled sample) uses its own pre-seeded cache.
+CACHE = Path(os.environ.get("STRAVA_GEOCODE_CACHE") or ROOT / "data" / "geocode_cache.json")
 
 
 def _centroid(coords):

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Strava Stats</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <script>
     // Apply the saved theme before paint (no flash); expose the toggle.
     (function () {
@@ -22,7 +23,7 @@
 </head>
 <body>
   <header>
-    <div class="brand">
+    <div class="brand" id="brand-home" role="button" tabindex="0" title="Back to overview">
       <span class="mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M3 17c3.5 0 3.5-7 7-7s3.5 5 6 5 4-9 4-9" stroke="currentColor"
@@ -39,7 +40,7 @@
         <button class="tab" data-tab="runs">Runs</button>
         <button class="tab" data-tab="map">Map</button>
       </nav>
-      <button class="hdr-btn icon theme-toggle" type="button" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle light or dark mode"><span class="ic-sun">☀</span><span class="ic-moon">☾</span></button>
+      <button class="hdr-btn icon theme-toggle" type="button" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle light or dark mode"><span class="ic-sun">☀</span><span class="ic-moon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" fill="currentColor"/></svg></span></button>
       <a class="hdr-btn" href="import.html" title="Import a different export or clear data">↻ Import</a>
     </div>
   </header>
@@ -49,10 +50,6 @@
     <section id="overview" class="panel active">
       <div id="hero" class="stat-grid"></div>
       <div class="card">
-        <h2>For fun</h2>
-        <div id="funfacts" class="fun-grid"></div>
-      </div>
-      <div class="card">
         <h2>Mileage by week</h2>
         <div id="overview-mileage" class="chart"></div>
       </div>
@@ -60,6 +57,10 @@
         <h2>Training calendar</h2>
         <p class="hint">Daily miles — click a day to open the run.</p>
         <div id="calendar"></div>
+      </div>
+      <div class="card">
+        <h2>For fun</h2>
+        <div id="funfacts" class="fun-grid"></div>
       </div>
       <div class="card" id="photos-card">
         <h2>📷 From the road</h2>
@@ -136,27 +137,36 @@
               <div class="region-list" id="region-controls"></div>
             </div>
             <div class="side-group">
+              <span class="side-label">Segment tool</span>
+              <button id="toggle-draw" class="draw-cta" aria-pressed="false">
+                <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                  <path d="M4 20l4.5-1L19 8.5a2.1 2.1 0 0 0-3-3L5.5 16 4 20z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                  <path d="M14.5 7l2.5 2.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span>Draw a segment</span>
+              </button>
+              <div id="draw-controls" class="draw-panel hidden">
+                <p id="draw-hint" class="draw-hint">Drag across the map to paint a segment.</p>
+                <label class="draw-field">
+                  <span>Brush width</span>
+                  <span class="draw-range"><input type="range" id="draw-width" min="15" max="80" step="5" value="30"><b id="draw-width-val">30 m</b></span>
+                </label>
+                <div class="draw-field">
+                  <span>Direction</span>
+                  <div class="draw-dir">
+                    <button data-dir="1" class="active">Directional</button>
+                    <button data-dir="0">Either way</button>
+                  </div>
+                </div>
+                <button id="draw-new" class="draw-new">✕ New segment</button>
+              </div>
+            </div>
+            <div class="side-group">
               <span class="side-label">Overlays</span>
               <div class="overlay-list">
                 <button id="toggle-photos" class="toggle" aria-pressed="false">📷 Photos</button>
                 <button id="toggle-segments" class="toggle" aria-pressed="false">🏃 Repeated segments</button>
-                <button id="toggle-draw" class="toggle toggle-draw" aria-pressed="false">✏️ Draw a segment</button>
               </div>
-            </div>
-            <div id="draw-controls" class="draw-panel hidden">
-              <p id="draw-hint" class="draw-hint">Drag across the map to paint a segment.</p>
-              <label class="draw-field">
-                <span>Brush width</span>
-                <span class="draw-range"><input type="range" id="draw-width" min="15" max="80" step="5" value="30"><b id="draw-width-val">30 m</b></span>
-              </label>
-              <div class="draw-field">
-                <span>Direction</span>
-                <div class="draw-dir">
-                  <button data-dir="1" class="active">Directional</button>
-                  <button data-dir="0">Either way</button>
-                </div>
-              </div>
-              <button id="draw-new" class="draw-new">✕ New segment</button>
             </div>
           </aside>
           <div class="map-main">
