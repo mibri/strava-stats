@@ -75,6 +75,14 @@ export function parseActivitiesCsv(text) {
     let cadence = steps && movingS ? steps / (movingS / 60) : null;
     if (cadence != null && (cadence < 120 || cadence > 240)) cadence = null;
 
+    // Stride length = distance / total steps, trusted only when cadence is sane (a few
+    // runs have a corrupt step count). Mirrors stride_form in metrics.py.
+    let stride_ft = null, stride_m = null;
+    if (cadence != null && steps > 0 && distM > 0) {
+      const sm = distM / steps;
+      if (sm > 0.5 && sm < 2.5) { stride_m = round(sm, 2); stride_ft = round(sm / M_PER_FT, 2); }
+    }
+
     const utc = parseUtc(get(r, "Activity Date"));
     runs.push({
       id: String(get(r, "Activity ID")),
@@ -94,6 +102,7 @@ export function parseActivitiesCsv(text) {
       elev_loss_ft: elevLoss != null ? elevLoss / M_PER_FT : null,
       avg_grade: num(get(r, "Average Grade")),
       cadence,
+      stride_ft, stride_m,
       calories: num(get(r, "Calories")),
       rel_effort: num(get(r, "Relative Effort.1")),
       temp_f: tempC != null ? (tempC * 9) / 5 + 32 : null,
@@ -308,7 +317,9 @@ export async function buildAll(arrayBuffer, onProgress) {
   const homeBounds = summary.regions[0]?.bounds || null;
   const segments = buildSegments(trajsById, runs, homeBounds);
 
-  // Per-run detail files (drop the internal trajectory), keyed by id.
+  // Per-run detail files, keyed by id. Keep the index-aligned trajectory: the
+  // drawn-segment matcher reads time/HR at route positions off of it (the display
+  // `stream` has latlng on a separate stride, so it can't be indexed that way).
   const byId = Object.fromEntries(runs.map((r) => [r.id, r]));
   const streamDetails = {};
   for (const [id, st] of Object.entries(streams)) {
@@ -318,7 +329,10 @@ export async function buildAll(arrayBuffer, onProgress) {
       distance_mi: round(r?.distance_mi, 2), photos: r?.photos || [],
       splits: st.splits, best_efforts: Object.fromEntries(Object.entries(st.best_efforts).map(([k, v]) =>
         [k, { s: Math.round(v * 10) / 10, t: fmtTimeStr(v) }])),
-      stream: st.stream,
+      stream: st.stream, traj: st.traj,
+      stride: r && r.stride_ft != null
+        ? { stride_ft: r.stride_ft, stride_m: r.stride_m, cadence_spm: Math.round(r.cadence) } : {},
+      climb: st.climb || {},
     };
   }
 

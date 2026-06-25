@@ -205,3 +205,94 @@ def aerobic_decoupling(stream: dict) -> float | None:
     if not e1 or not e2:
         return None
     return round((e1 - e2) / e1 * 100, 1)
+
+
+def stride_form(stream: pd.DataFrame, cadence, dist_m, total_steps) -> dict:
+    """Stride length (distance per step) and within-run stride fade.
+
+    Average stride = distance / total steps, which is unit-robust. Both stride and
+    cadence come from Total Steps, so they're trusted only when the caller's already-
+    validated cadence is physiologically sane (a few runs have a corrupt step count
+    that doubles it). The per-sample fade series (speed ÷ cadence) is used only as a
+    *ratio*, so it doesn't matter that FIT records cadence per leg — the unit cancels.
+    Fade compares the last quarter of the run to the first: negative means your stride
+    shortened as you tired (often the first thing to go), holding cadence."""
+    out: dict = {}
+    try:
+        cad = float(cadence); ts = float(total_steps); dm = float(dist_m)
+    except (TypeError, ValueError):
+        cad = ts = dm = float("nan")
+    cad_ok = cad == cad and 120 <= cad <= 240          # NaN-safe sanity gate
+    if cad_ok and ts > 0 and dm > 0:
+        stride_m = dm / ts
+        if 0.5 < stride_m < 2.5:                        # sane running/walking stride
+            out["stride_ft"] = round(stride_m / M_PER_FT, 2)
+            out["stride_m"] = round(stride_m, 2)
+            out["cadence_spm"] = round(cad, 0)
+    if stream is not None and not stream.empty and \
+            stream["speed_ms"].notna().any() and stream["cad"].notna().any():
+        s = stream.dropna(subset=["speed_ms", "cad"])
+        s = s[(s["speed_ms"] > 0.5) & (s["cad"] > 0)]
+        if len(s) >= 60:
+            stride = (s["speed_ms"].to_numpy() / s["cad"].to_numpy())
+            q = len(stride) // 4
+            first, last = float(np.mean(stride[:q])), float(np.mean(stride[-q:]))
+            if first > 0:
+                out["stride_fade_pct"] = round((last - first) / first * 100, 1)
+    return out
+
+
+def climb_metrics(stream: pd.DataFrame, smooth_m: float = 30.0, steep: float = 8.0,
+                  mod: float = 3.0, sustain_m: float = 160.0) -> dict:
+    """Climbing detail from the elevation profile: VAM (vertical ft/hr while climbing),
+    share of time spent climbing / flat / descending, grade distribution by distance,
+    and the steepest grade sustained over ~0.1 mi. Elevation is resampled to even
+    distance steps (smoothing baro/GPS noise) before grades are taken."""
+    if stream is None or stream.empty or stream["ele_m"].isna().all() or stream["dist_m"].isna().all():
+        return {}
+    s = stream.dropna(subset=["dist_m", "t", "ele_m"]).sort_values("t").reset_index(drop=True)
+    if len(s) < 10:
+        return {}
+    dist, mt = clean_cumulative(s["t"].to_numpy(), s["dist_m"].to_numpy())   # moving dist/time
+    ele = s["ele_m"].to_numpy()
+    if dist[-1] - dist[0] < 200:                       # too short to characterize
+        return {}
+
+    edges = np.arange(dist[0], dist[-1], smooth_m)
+    if len(edges) < 3:
+        return {}
+    ele_i = np.interp(edges, dist, ele)
+    t_i = np.interp(edges, dist, mt)
+    d_ele, d_dist, d_time = np.diff(ele_i), np.diff(edges), np.diff(t_i)
+    grade = np.where(d_dist > 0, d_ele / d_dist * 100.0, 0.0)
+
+    climb, desc = grade > mod, grade < -mod
+    flat = ~climb & ~desc
+    tt = d_time.sum() or 1.0
+    asc_ft = d_ele[d_ele > 0].sum() / M_PER_FT
+    climb_hrs = d_time[climb].sum() / 3600.0
+    # VAM only when there's enough sustained climbing to be a stable rate (≥2 min,
+    # ≥100 ft) — otherwise a brief steep pitch produces an absurd extrapolated figure.
+    vam = asc_ft / climb_hrs if (climb_hrs >= 0.033 and asc_ft >= 100) else None
+
+    bands = [(-1e9, -steep, "steep ↓"), (-steep, -mod, "↓"), (-mod, mod, "flat"),
+             (mod, steep, "↑"), (steep, 1e9, "steep ↑")]
+    dd = d_dist.sum() or 1.0
+    grade_bands = [{"label": lab,
+                    "pct": round(float(d_dist[(grade >= lo) & (grade < hi)].sum() / dd * 100), 0)}
+                   for lo, hi, lab in bands]
+
+    win = max(1, int(round(sustain_m / smooth_m)))
+    steepest = 0.0
+    for i in range(len(ele_i) - win):
+        g = (ele_i[i + win] - ele_i[i]) / (smooth_m * win) * 100.0
+        if g > steepest:
+            steepest = g
+    return {
+        "vam_ft_hr": int(round(vam)) if vam else None,
+        "pct_climb": round(float(d_time[climb].sum() / tt * 100), 0),
+        "pct_flat": round(float(d_time[flat].sum() / tt * 100), 0),
+        "pct_descend": round(float(d_time[desc].sum() / tt * 100), 0),
+        "steepest_grade": round(float(steepest), 1),
+        "grade_bands": grade_bands,
+    }

@@ -126,6 +126,66 @@ export function aerobicDecoupling(stream) {
   return Math.round(((e1 - e2) / e1) * 100 * 10) / 10;
 }
 
+/** Climbing detail from the elevation profile — VAM (vertical ft/hr while climbing),
+ *  time climbing/flat/descending, grade distribution by distance, steepest sustained
+ *  grade. Elevation is resampled to even distance steps to smooth noise. Mirrors
+ *  climb_metrics in metrics.py. */
+export function climbMetrics(records, smoothM = 30, steep = 8, mod = 3, sustainM = 160) {
+  const s = records.filter((r) => r.dist_m != null && r.t != null && r.ele_m != null)
+    .sort((a, b) => a.t - b.t);
+  if (s.length < 10) return {};
+  const { dist, time } = cleanCumulative(s.map((r) => r.t), s.map((r) => r.dist_m));
+  const ele = s.map((r) => r.ele_m);
+  if (dist[dist.length - 1] - dist[0] < 200) return {};
+
+  const edges = [];
+  for (let x = dist[0]; x < dist[dist.length - 1]; x += smoothM) edges.push(x);
+  if (edges.length < 3) return {};
+  // linear interpolation of (cumulative dist → value) at each edge
+  const interp = (xs, ys, x) => {
+    if (x <= xs[0]) return ys[0];
+    if (x >= xs[xs.length - 1]) return ys[ys.length - 1];
+    let lo = 0, hi = xs.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= x) lo = m; else hi = m; }
+    const t0 = xs[lo], t1 = xs[hi];
+    return t1 === t0 ? ys[lo] : ys[lo] + ((x - t0) / (t1 - t0)) * (ys[hi] - ys[lo]);
+  };
+  const eleI = edges.map((x) => interp(dist, ele, x));
+  const tI = edges.map((x) => interp(dist, time, x));
+
+  const n = edges.length - 1;
+  const grades = new Array(n), dDist = new Array(n);
+  let ttSum = 0, ddSum = 0, ascFt = 0, climbT = 0, flatT = 0, descT = 0;
+  for (let i = 0; i < n; i++) {
+    const de = eleI[i + 1] - eleI[i], dd = edges[i + 1] - edges[i], dt = tI[i + 1] - tI[i];
+    const g = dd > 0 ? (de / dd) * 100 : 0;
+    grades[i] = g; dDist[i] = dd; ttSum += dt; ddSum += dd;
+    if (de > 0) ascFt += de / M_PER_FT;
+    if (g > mod) climbT += dt; else if (g < -mod) descT += dt; else flatT += dt;
+  }
+  const tt = ttSum || 1, ddTot = ddSum || 1, climbHrs = climbT / 3600;
+  const vam = (climbHrs >= 0.033 && ascFt >= 100) ? ascFt / climbHrs : null;
+  const bands = [[-1e9, -steep, "steep ↓"], [-steep, -mod, "↓"], [-mod, mod, "flat"],
+    [mod, steep, "↑"], [steep, 1e9, "steep ↑"]];
+  const grade_bands = bands.map(([lo, hi, label]) => {
+    let sum = 0;
+    for (let i = 0; i < n; i++) if (grades[i] >= lo && grades[i] < hi) sum += dDist[i];
+    return { label, pct: Math.round((sum / ddTot) * 100) };
+  });
+  const win = Math.max(1, Math.round(sustainM / smoothM));
+  let steepest = 0;
+  for (let i = 0; i < eleI.length - win; i++) {
+    const g = ((eleI[i + win] - eleI[i]) / (smoothM * win)) * 100;
+    if (g > steepest) steepest = g;
+  }
+  return {
+    vam_ft_hr: vam != null ? Math.round(vam) : null,
+    pct_climb: Math.round((climbT / tt) * 100), pct_flat: Math.round((flatT / tt) * 100),
+    pct_descend: Math.round((descT / tt) * 100), steepest_grade: Math.round(steepest * 10) / 10,
+    grade_bands,
+  };
+}
+
 /** Index-aligned GPS trajectory resampled to ~every_m spacing (for segment matching). */
 export function buildTrajectory(records, everyM = 12) {
   const s = records

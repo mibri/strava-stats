@@ -25,9 +25,11 @@ from .metrics import (
     aerobic_decoupling,
     best_efforts,
     build_trajectory,
+    climb_metrics,
     downsample_stream,
     mile_splits,
     riegel_predict,
+    stride_form,
 )
 
 EFFORT_M = {label: m for m, label in BEST_EFFORT_DISTANCES}
@@ -289,6 +291,8 @@ def build():
         splits: list[dict] = []
         stream_compact: dict = {}
         traj: dict = {}
+        stride: dict = {}
+        climb: dict = {}
 
         if track_path and track_path.exists():
             try:
@@ -297,6 +301,8 @@ def build():
                 splits = mile_splits(stream)
                 stream_compact = downsample_stream(stream)
                 traj = build_trajectory(stream)  # index-aligned, for segment matching
+                stride = stride_form(stream, r["cadence"], r.get("Distance.1"), r.get("Total Steps"))
+                climb = climb_metrics(stream)
             except Exception as e:  # keep going; a bad file shouldn't kill the build
                 print(f"  ! {rid} track parse failed: {e}")
 
@@ -306,12 +312,16 @@ def build():
         min_split = min(paces) if paces else np.nan
         parsed[rid] = {"efforts": efforts, "splits": splits, "stream": stream_compact,
                        "traj": traj, "spread": spread, "min_split": min_split,
-                       "decoup": aerobic_decoupling(stream_compact)}
+                       "decoup": aerobic_decoupling(stream_compact),
+                       "stride": stride, "climb": climb}
 
     runs["_best_efforts"] = runs["id"].map(lambda i: parsed[i]["efforts"])
     runs["split_spread"] = runs["id"].map(lambda i: parsed[i]["spread"])
     runs["min_split"] = runs["id"].map(lambda i: parsed[i]["min_split"])
     runs["decoup"] = runs["id"].map(lambda i: parsed[i]["decoup"])
+    runs["stride_ft"] = runs["id"].map(lambda i: parsed[i]["stride"].get("stride_ft"))
+    runs["stride_fade_pct"] = runs["id"].map(lambda i: parsed[i]["stride"].get("stride_fade_pct"))
+    runs["vam_ft_hr"] = runs["id"].map(lambda i: parsed[i]["climb"].get("vam_ft_hr"))
 
     # ---- Localize timestamps (UTC → local) then refresh week columns ----
     start_coords = {rid: (p["stream"]["latlng"][0] if p["stream"].get("latlng") else None)
@@ -336,6 +346,12 @@ def build():
             "splits": p["splits"],
             "best_efforts": {k: {"s": round(v, 1), "t": fmt_time(v)} for k, v in p["efforts"].items()},
             "stream": p["stream"],
+            "stride": p["stride"],          # stride length / cadence / within-run fade
+            "climb": p["climb"],            # VAM, grade distribution, time climbing/flat/descending
+            # Index-aligned trajectory (lat/lon/t/dist_mi/hr share one index, unlike the
+            # display `stream` whose latlng is sampled separately). Drives the drawn-segment
+            # matcher, which needs to map a route position to the time/HR at that point.
+            "traj": p["traj"],
         }
         (STREAMS / f"{rid}.json").write_text(json.dumps(detail))
 
@@ -485,6 +501,8 @@ def _run_points(runs: pd.DataFrame) -> list[dict]:
             "cadence": _f(r["cadence"], 0), "temp_f": _f(r["temp_f"], 0),
             "elev_pm": _f(epm, 0), "rel_effort": _f(r["rel_effort"], 0),
             "decoup": _f(r["decoup"], 1),
+            "stride_ft": _f(r["stride_ft"], 2), "stride_fade": _f(r["stride_fade_pct"], 1),
+            "vam": _f(r["vam_ft_hr"], 0),
         })
     return out
 

@@ -8,7 +8,7 @@
  */
 import { loadTrack } from "./tracks.js";
 import {
-  bestEfforts, mileSplits, downsampleStream, buildTrajectory, aerobicDecoupling,
+  bestEfforts, mileSplits, downsampleStream, buildTrajectory, aerobicDecoupling, climbMetrics,
 } from "./metrics.js";
 
 self.onmessage = async (e) => {
@@ -29,6 +29,7 @@ self.onmessage = async (e) => {
           stream: compact,
           traj: buildTrajectory(stream), // internal: consumed by segment detection
           decoup: aerobicDecoupling(compact),
+          climb: climbMetrics(stream),   // VAM / grade distribution / time on terrain
         };
         if (compact.latlng && compact.latlng.length) routes.push({ id: job.id, latlng: compact.latlng });
       } else {

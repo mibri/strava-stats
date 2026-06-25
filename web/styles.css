@@ -7,6 +7,8 @@
   --muted: #8b94a3;
   --accent: #fc5200;      /* Strava orange */
   --accent-soft: #fc520022;
+  --draw: #5b8def;        /* map tools accent (kept off the data's orange) */
+  --draw-soft: rgba(91,141,239,.15);
   --easy: #4f93ff;
   --long: #ec5fa6;
   --workout: #fc5200;
@@ -35,6 +37,8 @@
   --text: #1b2430;
   --muted: #5d6675;
   --accent-soft: #fc52001a;
+  --draw: #2f6fe0;
+  --draw-soft: rgba(47,111,224,.12);
   --shadow: 0 6px 20px rgba(20,30,50,.10);
   --grid: #e3e8ee;
   --hover-bg: #ffffff;
@@ -176,46 +180,96 @@ tbody tr:hover { background: var(--bg-elev2); }
 /* Maps */
 /* isolate: contain Leaflet's internal pane/control z-indexes (up to ~1000) so they
    can't paint over the sticky header when the map scrolls under it. */
-.map { width: 100%; height: 78vh; min-height: 520px; border-radius: 12px; overflow: hidden; isolation: isolate; }
+.map { width: 100%; height: calc(100vh - 200px); min-height: 480px; border-radius: 12px; overflow: hidden; isolation: isolate; }
 .leaflet-container { background: var(--map-bg); }
-#map .card { padding: 16px; }
+/* While arming/drawing a segment, keep a single crosshair everywhere — including over
+   route paths, which Leaflet otherwise switches to a pointer. */
+.map.drawing, .map.drawing .leaflet-interactive, .map.drawing .leaflet-grab { cursor: crosshair; }
 
-/* Map control bar: city selector (left) vs. overlay toggles (right) */
-.map-bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
-.map-bar .pr-controls { margin: 0; }
-.map-toggles { display: flex; align-items: center; gap: 8px; }
-.toggles-label { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-right: 2px; }
+/* The map page breaks out of the centered 1180px column to use the full window width
+   (other tabs stay narrow). Wide monitors have plenty of horizontal room — use it. */
+#map.panel { width: 100vw; margin-left: calc(50% - 50vw); padding-inline: clamp(16px, 3vw, 56px); }
+.map-card { padding: 16px; max-width: 1860px; margin: 0 auto 20px; }
+
+/* Two-column map page: a controls sidebar + the map filling the rest. */
+.map-layout { display: flex; gap: 16px; align-items: stretch; }
+.map-side { width: 240px; flex: none; display: flex; flex-direction: column; gap: 18px; }
+.map-side-head h2 { margin: 0 0 4px; }
+.map-side-head .hint { margin: 0; }
+.map-main { position: relative; flex: 1; min-width: 0; }
+
+.side-group { display: flex; flex-direction: column; gap: 8px; }
+.side-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+
+/* Location picker — vertical list */
+.region-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; padding-right: 2px; }
+.region-list button {
+  text-align: left; background: var(--bg-elev2); border: 1px solid var(--border); color: var(--muted);
+  padding: 8px 11px; border-radius: 9px; cursor: pointer; font-size: 13px; font-weight: 600; transition: .12s;
+}
+.region-list button:hover { color: var(--text); }
+.region-list button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Overlay toggles — full-width pills with a status dot */
+.overlay-list { display: flex; flex-direction: column; gap: 6px; }
 .toggle {
-  display: inline-flex; align-items: center; gap: 7px;
-  background: transparent; border: 1px solid var(--border); color: var(--muted);
-  padding: 6px 13px 6px 10px; border-radius: 999px; cursor: pointer;
-  font-size: 13px; font-weight: 600; transition: .15s;
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  background: var(--bg-elev2); border: 1px solid var(--border); color: var(--text);
+  padding: 9px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; transition: .12s;
 }
 .toggle::before {
-  content: ""; width: 13px; height: 13px; border-radius: 50%;
-  border: 2px solid #3a424f; background: var(--bg); transition: .15s; flex: none;
+  content: ""; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--border); background: var(--bg); transition: .12s; flex: none;
 }
-.toggle:hover:not(:disabled) { color: var(--text); border-color: #3a424f; }
-.toggle.active { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
-.toggle.active::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.toggle:hover:not(:disabled) { border-color: var(--muted); }
+.toggle.active { border-color: var(--draw); background: var(--draw-soft); }
+.toggle.active::before { background: var(--draw); border-color: var(--draw); box-shadow: 0 0 0 3px var(--draw-soft); }
 .toggle:disabled { opacity: .45; cursor: default; }
 
-/* Draw-a-segment controls */
-.draw-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--accent-soft); }
-.draw-bar .hint { margin: 0; flex: 1 1 220px; }
-.draw-width { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.draw-width input[type=range] { accent-color: var(--accent); }
-.draw-width span { min-width: 34px; }
-.draw-bar .draw-dir { margin: 0; }
-#draw-new::before { display: none; }
+/* Draw-a-segment controls — neutral surface, blue accent (not the data's orange) */
+.draw-panel { display: flex; flex-direction: column; gap: 13px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev2); }
+.draw-panel.hidden { display: none; }
+.draw-hint { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.draw-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.draw-range { display: flex; align-items: center; gap: 10px; }
+.draw-range input[type=range] { flex: 1; accent-color: var(--draw); }
+.draw-range b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 38px; text-transform: none; letter-spacing: 0; }
+.draw-dir { display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.draw-dir button { flex: 1; background: var(--bg-elev); border: 0; color: var(--muted); padding: 8px 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: .12s; }
+.draw-dir button:hover { color: var(--text); }
+.draw-dir button.active { background: var(--draw); color: #fff; }
+.draw-new { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 8px; border-radius: 9px; cursor: pointer; font-size: 12.5px; font-weight: 600; transition: .12s; }
+.draw-new:hover { color: var(--text); border-color: var(--muted); }
 
-/* Segment trend panel */
+/* Drawn-segment overlay bits */
+.leaflet-tooltip.seg-ab { background: none; border: 0; box-shadow: none; padding: 0; color: #0b0d11; font-size: 10px; font-weight: 800; }
+.leaflet-tooltip.seg-ab::before { display: none; }
+.seg-arrow { background: none; border: 0; }
+
+/* Segment trend panel — its own column to the right of the map (not an overlay), so
+   the map simply narrows to make room and is never covered. */
+.map-results { flex: none; width: 370px; height: calc(100vh - 200px); min-height: 480px;
+  overflow-y: auto; }
+.map-results:empty { display: none; }
+.map-results .seg-mini { grid-template-columns: 1fr; }
 #segment-panel:empty { display: none; }
-.seg-card { position: relative; margin-top: 16px; }
+.seg-card { position: relative; margin: 0; }
 .seg-card h2 { font-size: 18px; }
 .seg-card h3 { margin: 0 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .seg-mini { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
 @media (max-width: 720px) { .seg-mini { grid-template-columns: 1fr; } }
+
+/* Narrow screens: stack the sidebar above the map and dock the results below it. */
+@media (max-width: 860px) {
+  .map-layout { flex-direction: column; }
+  .map-side { width: auto; }
+  .region-list { flex-direction: row; flex-wrap: wrap; max-height: none; }
+  .region-list button { flex: 1 1 auto; }
+  .overlay-list { flex-direction: row; flex-wrap: wrap; }
+  .toggle { width: auto; flex: 1 1 160px; }
+  .map { height: 68vh; }
+  .map-results { width: auto; height: auto; max-height: 70vh; margin-top: 12px; }
+}
 .seg-close {
   position: absolute; top: 12px; right: 12px; background: var(--bg-elev2);
   border: 1px solid var(--border); color: var(--muted); width: 28px; height: 28px;
@@ -310,6 +364,20 @@ tbody tr:hover { background: var(--bg-elev2); }
 .be-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .be { background: var(--bg-elev2); border-radius: 9px; padding: 8px 12px; font-size: 13px; }
 .be b { color: var(--accent); }
+
+/* Form & climbing detail cards */
+.form-climb { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+@media (max-width: 640px) { .form-climb { grid-template-columns: 1fr; } }
+.fc-card { background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.fc-card h3 { margin: 0 0 10px; font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.fc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 8px; }
+.fc-stats .stat { background: var(--bg-elev); border: 0; padding: 10px 6px; text-align: center; border-radius: 9px; }
+.fc-stats .val { font-size: 18px; }
+.fc-stats .lbl { font-size: 11px; margin-top: 3px; }
+.terrain-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 12px; background: var(--bg-elev); }
+.terrain-bar span { display: block; height: 100%; }
+.terrain-legend { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.terrain-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 
 @media (max-width: 640px) {
   header { flex-direction: column; align-items: flex-start; }

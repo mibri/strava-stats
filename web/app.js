@@ -610,6 +610,8 @@ async function openRun(id) {
   const photoHtml = photos.length
     ? `<div class="detail-photos">${photos.map((f, i) => `<img src="${mediaUrl(f)}" data-i="${i}" />`).join("")}</div>` : "";
 
+  const formClimbHtml = buildFormClimb(d, r);
+
   $("#modal-body").innerHTML = `
     <h2>${escapeHtml(r.name)}</h2>
     <p class="sub">${r.date} · <span class="pill ${r.type}">${r.type}</span>${r.description ? " · " + escapeHtml(r.description) : ""}</p>
@@ -624,6 +626,7 @@ async function openRun(id) {
       ${stat(r.rel_effort ? Math.round(r.rel_effort) : "—", "effort")}
     </div>
     ${beHtml ? `<div class="be-grid">${beHtml}</div>` : ""}
+    ${formClimbHtml}
     ${photoHtml}
     <div id="detail-map" class="detail-map"></div>
     <div id="detail-streams"></div>
@@ -676,6 +679,48 @@ async function openRun(id) {
   }
 }
 const stat = (v, l) => `<div class="stat"><div class="val">${v}</div><div class="lbl">${l}</div></div>`;
+
+// Form (stride length / cadence / within-run stride fade) + Climbing (VAM, steepest
+// grade, time on terrain) detail cards for the run modal. Derived in the pipeline from
+// the GPS/cadence/elevation streams; absent for treadmill or no-elevation runs, in which
+// case the relevant card is omitted.
+function buildFormClimb(d, r) {
+  const stride = (d && d.stride) || {}, climb = (d && d.climb) || {};
+  const hasForm = stride.stride_ft != null;
+  const hasClimb = climb.vam_ft_hr != null || (climb.grade_bands && climb.grade_bands.some((b) => b.pct > 0));
+  if (!hasForm && !hasClimb) return "";
+
+  const fade = stride.stride_fade_pct;
+  const fadeColor = fade == null ? "" : fade <= -3 ? "var(--long)" : fade >= 1 ? "var(--recovery)" : "";
+  // Per-sample cadence is only in some streams, so the fade tile is shown when available.
+  const fadeTile = fade == null ? ""
+    : `<div class="stat"><div class="val" style="color:${fadeColor}">${fade > 0 ? "+" : ""}${fade}%</div><div class="lbl">stride vs. start</div></div>`;
+  const formCard = hasForm ? `<div class="fc-card"><h3>Form</h3>
+    <div class="fc-stats">
+      ${stat(stride.stride_ft.toFixed(2), "ft / stride")}
+      ${stat(stride.cadence_spm != null ? Math.round(stride.cadence_spm) : "—", "spm cadence")}
+      ${fadeTile}
+    </div>
+    <p class="hint" style="margin:10px 0 0">Average distance per step at your cadence.${fade != null ? " “Vs. start” compares your last quarter of the run to your first — negative means your stride shortened as you tired." : ""}</p>
+  </div>` : "";
+
+  // grade-distribution bar (steep↓ ↓ flat ↑ steep↑) by share of distance
+  const bandColors = ["#3f72c4", "#6f9fe0", "#8b94a3", "#fc8a4f", "#fc5200"];
+  const bands = (climb.grade_bands || []);
+  const terrain = bands.map((b, i) => b.pct > 0
+    ? `<span style="width:${b.pct}%;background:${bandColors[i]}" title="${b.label}: ${b.pct}%"></span>` : "").join("");
+  const climbCard = hasClimb ? `<div class="fc-card"><h3>Climbing</h3>
+    <div class="fc-stats">
+      ${stat(climb.vam_ft_hr != null ? num(climb.vam_ft_hr) : "—", "ft/hr climbing")}
+      ${stat(climb.steepest_grade != null ? climb.steepest_grade + "%" : "—", "steepest ⅒-mi")}
+      ${stat(climb.pct_climb != null ? Math.round(climb.pct_climb) + "%" : "—", "time climbing")}
+    </div>
+    ${terrain ? `<div class="terrain-bar">${terrain}</div>
+      <div class="terrain-legend"><span><i style="background:#3f72c4"></i>downhill</span><span><i style="background:#8b94a3"></i>flat</span><span><i style="background:#fc5200"></i>uphill</span></div>` : ""}
+  </div>` : "";
+
+  return `<div class="form-climb">${formCard}${climbCard}</div>`;
+}
 $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
 $("#modal").onclick = (e) => { if (e.target.id === "modal") $("#modal").classList.add("hidden"); };
 
@@ -687,15 +732,24 @@ function buildHeatmap() {
   $("#route-count").textContent = state.routes.features.length;
   const map = L.map("heatmap", { attributionControl: false });
   L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(map);
+  // The results column narrows/widens the map; keep Leaflet's view in sync with its box.
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => requestAnimationFrame(() => map.invalidateSize({ animate: false })))
+      .observe(map.getContainer());
+  }
 
-  const all = [];
+  const all = [], plById = {};
   state.routes.features.forEach((f) => {
     const latlng = f.geometry.coordinates.map(([lo, la]) => [la, lo]);
     const pl = L.polyline(latlng, { color: "#fc5200", weight: 2, opacity: 0.3 }).addTo(map);
-    pl.on("mouseover", () => { if (!drawMode) pl.setStyle({ opacity: 1, weight: 4 }); });
-    pl.on("mouseout", () => { if (!drawMode) pl.setStyle({ opacity: 0.3, weight: 2 }); });
-    pl.on("click", () => { if (!drawMode) openRun(f.properties.id); });
+    // Hover/click stay live except during the actual paint gesture (armed). After a
+    // segment is drawn the map is handed back, so matches remain clickable.
+    pl.on("mouseover", () => { if (!armed) pl.setStyle({ opacity: 1, weight: 4 }); });
+    pl.on("mouseout", () => { if (!armed) pl.setStyle(pl._rest || { opacity: 0.3, weight: 2 }); });
+    pl.on("click", () => { if (!armed && !suppressClick) openRun(f.properties.id); });
+    pl._rid = f.properties.id;
     all.push(pl);
+    plById[f.properties.id] = pl;
   });
 
   const fit = (b) => setTimeout(() => { map.invalidateSize(); map.fitBounds(b, { padding: [30, 30] }); }, 80);
@@ -770,14 +824,20 @@ function buildHeatmap() {
   };
 
   // ---- Draw-a-segment: paint a corridor, see every run that ran it ----
-  const DRAW_TREND = { improving: "#45c08a", declining: "#ec5fa6", flat: "#7f8a99" };
+  // Interaction model: the Draw toggle opens a *session* (controls visible). Within it the
+  // map stays fully pannable/zoomable; only the single painting gesture is "armed" (drag
+  // captured instead of panning). After a stroke the map hands control back so you can pan
+  // to inspect; "New segment" re-arms. Routes are never hidden — matches are highlighted
+  // once the stroke is measured.
+  const DRAW_TREND = { improving: "#45c08a", declining: "#ec5fa6", flat: "#8b94a3" };
   const drawBtn = $("#toggle-draw");
   const drawCtl = $("#draw-controls");
   const widthInput = $("#draw-width");
   const widthVal = $("#draw-width-val");
+  const drawHint = $("#draw-hint");
   const widthM = () => +widthInput.value;
-  let drawMode = false, drawing = false, directional = true;
-  let stroke = null, raw = null, drawLayer = null, livePoly = null;
+  let session = false, armed = false, drawing = false, directional = true, suppressClick = false;
+  let stroke = null, raw = null, drawLayer = null, livePoly = null, liveCase = null;
 
   // Metric ±halfW buffer of the stroke, in lat/lon (so it stays correct at every zoom).
   const bufferPolygon = (latlngs, halfW) => {
@@ -796,31 +856,71 @@ function buildHeatmap() {
     return lft.concat(rgt.reverse()).map(toLL);
   };
 
+  // Highlight the runs that matched; dim the rest. `_rest` records each route's resting
+  // style so the hover handlers can restore it (matched stays bold, others stay dim).
+  const DIM = { color: "#fc5200", opacity: 0.06, weight: 1.5 };
+  const LIT = { color: "#fc5200", opacity: 0.9, weight: 3.5 };
+  const BASE = { color: "#fc5200", opacity: 0.3, weight: 2 };
+  const highlightMatches = (ids) => {
+    const set = new Set(ids);
+    all.forEach((pl) => {
+      const id = pl._rid;
+      const rest = set.has(id) ? LIT : DIM;
+      pl._matched = set.has(id); pl._rest = rest; pl.setStyle(rest);
+    });
+  };
+  const clearHighlights = () => all.forEach((pl) => { pl._matched = false; pl._rest = BASE; pl.setStyle(BASE); });
+
+  const setHint = (msg) => { if (drawHint) drawHint.textContent = msg; };
+  const arm = () => { armed = true; map.dragging.disable(); map.getContainer().classList.add("drawing"); setHint("Drag across the map to paint a segment."); };
+  const disarm = () => { armed = false; map.dragging.enable(); map.getContainer().classList.remove("drawing"); };
+
   const clearDraw = () => {
     if (drawLayer) { map.removeLayer(drawLayer); drawLayer = null; }
-    stroke = null; raw = null; livePoly = null;
+    stroke = null; raw = null; livePoly = null; liveCase = null;
     $("#segment-panel").innerHTML = "";
+    clearHighlights();
   };
 
   const renderDraw = () => {
     if (!stroke || stroke.length < 2 || !raw) return;
     const cl = buildCenterline(stroke);
-    const seg = aggregateDrawn(raw, Math.round((cl.total / SEG_MI_M) * 100) / 100, segDirLabel(stroke), directional);
-    const col = DRAW_TREND[seg.trend.label] || "#7f8a99";
+    const seg = aggregateDrawn(raw.efforts, Math.round((cl.total / SEG_MI_M) * 100) / 100, segDirLabel(stroke), directional);
+    const col = DRAW_TREND[seg.trend.label] || "#8b94a3";
     if (drawLayer) map.removeLayer(drawLayer);
     drawLayer = L.layerGroup().addTo(map);
-    L.polygon(bufferPolygon(stroke, widthM() / 2), { color: col, weight: 1, opacity: 0.5, fillOpacity: 0.12, interactive: false }).addTo(drawLayer);
-    L.polyline(stroke, { color: col, weight: 3, opacity: 0.95, interactive: false }).addTo(drawLayer);
-    L.circleMarker(stroke[0], { radius: 5, color: "#fff", weight: 2, fillColor: col, fillOpacity: 1, interactive: false }).addTo(drawLayer);
-    const p = stroke[stroke.length - 1], q = stroke[stroke.length - 2];
-    const ang = (Math.atan2((p[1] - q[1]) * Math.cos((p[0] * Math.PI) / 180), p[0] - q[0]) * 180) / Math.PI;
-    const arrow = L.divIcon({ className: "", iconSize: [18, 18], html: `<div style="transform:rotate(${ang}deg);color:${col};font-size:18px;line-height:18px;text-shadow:0 0 2px #000">▲</div>` });
-    L.marker(p, { icon: arrow, interactive: false }).addTo(drawLayer);
-    if (seg.n_runs) showSegmentPanel(seg);
-    else {
+    // Buffer fill + a dark casing under a bright core so the stroke reads on any basemap.
+    L.polygon(bufferPolygon(stroke, widthM() / 2), { color: col, weight: 1, opacity: 0.4, fillColor: col, fillOpacity: 0.1, interactive: false }).addTo(drawLayer);
+    L.polyline(stroke, { color: "#0b0d11", weight: 8, opacity: 0.55, lineCap: "round", interactive: false }).addTo(drawLayer);
+    L.polyline(stroke, { color: col, weight: 4, opacity: 1, lineCap: "round", interactive: false }).addTo(drawLayer);
+    L.circleMarker(stroke[0], { radius: 7, color: "#0b0d11", weight: 3, fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(drawLayer)
+      .bindTooltip("A", { permanent: true, direction: "center", className: "seg-ab" });
+    // Direction arrowhead, placed at the segment's midpoint (by arc length) and pointing
+    // along the local heading there. Only in directional mode (it would be misleading in
+    // "either way", which counts both directions equally).
+    if (directional) {
+      const mid = cl.total / 2;
+      let k = 1;
+      while (k < cl.cum.length - 1 && cl.cum[k] < mid) k++;
+      const segLen = (cl.cum[k] - cl.cum[k - 1]) || 1;
+      const f = Math.max(0, Math.min(1, (mid - cl.cum[k - 1]) / segLen));
+      const a = stroke[k - 1], b = stroke[k];
+      const pt = [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])];
+      // Compass bearing, clockwise from north. The SVG arrow points north (up) by default,
+      // so rotating it by the bearing aims it along the drawn direction.
+      const ang = (Math.atan2((b[1] - a[1]) * Math.cos((a[0] * Math.PI) / 180), b[0] - a[0]) * 180) / Math.PI;
+      const arrow = L.divIcon({ className: "seg-arrow", iconSize: [34, 34], iconAnchor: [17, 17],
+        html: `<svg width="34" height="34" viewBox="0 0 34 34" style="transform:rotate(${ang}deg)"><path d="M17 28 L17 8 M17 8 L10 16 M17 8 L24 16" stroke="${col}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none" style="filter:drop-shadow(0 0 2px #0b0d11)"/></svg>` });
+      L.marker(pt, { icon: arrow, interactive: false }).addTo(drawLayer);
+    }
+    if (seg.n_runs) {
+      showSegmentPanel(seg);
+      highlightMatches([...new Set(seg.efforts.map((e) => e.id))]);
+    } else {
       $("#segment-panel").innerHTML = `<div class="card seg-card"><button class="seg-close" id="seg-close">✕</button>
-        <h2>Drawn segment</h2><p class="hint">No runs cover this stretch. Try a wider brush or a different section.</p></div>`;
+        <h2>Drawn segment</h2><p class="hint">No runs cover this stretch${directional ? " in this direction" : ""}. Try a wider brush, a different section, or “Either way”.</p></div>`;
       $("#seg-close").onclick = () => { $("#segment-panel").innerHTML = ""; };
+      clearHighlights();
     }
   };
 
@@ -831,46 +931,50 @@ function buildHeatmap() {
     renderDraw();
   };
 
-  const enterDraw = () => {
+  const startSession = () => {
     if (segLayer) $("#toggle-segments").onclick();    // can't show both overlays at once
-    drawMode = true;
+    session = true;
     drawBtn.classList.add("active"); drawBtn.setAttribute("aria-pressed", "true");
     drawCtl.classList.remove("hidden");
-    all.forEach((pl) => pl.setStyle({ opacity: 0.05 }));
-    map.dragging.disable();
-    map.getContainer().style.cursor = "crosshair";
+    arm();                                            // ready to paint immediately
   };
-  const exitDraw = () => {
-    drawMode = false; drawing = false;
+  const endSession = () => {
+    session = false; drawing = false;
     drawBtn.classList.remove("active"); drawBtn.setAttribute("aria-pressed", "false");
     drawCtl.classList.add("hidden");
-    all.forEach((pl) => pl.setStyle({ opacity: 0.3 }));
-    map.dragging.enable();
-    map.getContainer().style.cursor = "";
+    disarm();
     clearDraw();
   };
-  drawBtn.onclick = () => (drawMode ? exitDraw() : enterDraw());
+  drawBtn.onclick = () => (session ? endSession() : startSession());
 
   map.on("mousedown", (e) => {
-    if (!drawMode) return;
+    if (!armed) return;
     drawing = true;
     clearDraw();
     stroke = [[e.latlng.lat, e.latlng.lng]];
     drawLayer = L.layerGroup().addTo(map);
-    livePoly = L.polyline(stroke, { color: "#ffd23f", weight: 3, opacity: 0.95, interactive: false }).addTo(drawLayer);
+    liveCase = L.polyline(stroke, { color: "#0b0d11", weight: 8, opacity: 0.5, lineCap: "round", interactive: false }).addTo(drawLayer);
+    livePoly = L.polyline(stroke, { color: "#ffd23f", weight: 4, opacity: 1, lineCap: "round", interactive: false }).addTo(drawLayer);
   });
   map.on("mousemove", (e) => {
-    if (!drawMode || !drawing) return;
+    if (!armed || !drawing) return;
     const last = stroke[stroke.length - 1];
     const dM = Math.hypot((e.latlng.lat - last[0]) * SEG_MPD_LAT, (e.latlng.lng - last[1]) * SEG_MPD_LAT * Math.cos((last[0] * Math.PI) / 180));
     if (dM < 5) return;                               // ~5 m sampling, keeps the stroke light
     stroke.push([e.latlng.lat, e.latlng.lng]);
-    livePoly.setLatLngs(stroke);
+    livePoly.setLatLngs(stroke); liveCase.setLatLngs(stroke);
   });
   map.on("mouseup", () => {
-    if (!drawMode || !drawing) return;
+    if (!armed || !drawing) return;
     drawing = false;
     if (!stroke || stroke.length < 2 || buildCenterline(stroke).total < 30) { clearDraw(); return; }
+    // The browser fires a click on the route under the cursor right after this mouseup
+    // (mousedown+mouseup on one element). Swallow that one click so finishing a stroke
+    // doesn't open a run; it resets on the next tick, before any real later click.
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+    disarm();                                         // hand the map back so you can pan to inspect
+    setHint("Adjust the brush or direction below, or draw a new one.");
     runMatch();
   });
 
@@ -882,8 +986,8 @@ function buildHeatmap() {
     directional = b.dataset.dir === "1";
     if (raw) renderDraw();
   }));
-  $("#draw-new").onclick = () => clearDraw();
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawMode) exitDraw(); });
+  $("#draw-new").onclick = () => { clearDraw(); arm(); };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && session) endSession(); });
 
   fit((buttons[1] || buttons[0]).bounds);
 }
@@ -1010,35 +1114,48 @@ function segDirLabel(latlngs) {
   return SEG_DIR8[Math.floor((bearing + 22.5) / 45) % 8];
 }
 
-// Phase 1 (geometry on already-loaded routes) + phase 2 (fetch streams for matches only).
-// Returns the raw per-leg efforts keyed with run date/type; aggregation by direction is
-// deferred to aggregateDrawn so the Directional/Either-way toggle never re-fetches.
+// Phase 1 (bbox prefilter on already-loaded routes) + phase 2 (fetch the index-aligned
+// trajectory for candidates and run the authoritative matcher on it). Matching on `traj`
+// — whose lat/lon/t/dist_mi/hr share one index — is what lets us read the time/HR over an
+// arbitrary stretch of route; the display `stream.latlng` is sampled separately and cannot
+// be indexed that way (that mismatch silently dropped most runs before). Returns the raw
+// per-leg efforts plus the set of matched run ids; direction aggregation is deferred to
+// aggregateDrawn so the Directional/Either-way toggle never re-fetches.
 async function matchDrawnEfforts(cl, widthM) {
   const halfW = widthM / 2;
-  const matches = [];
+  const pad = halfW / SEG_MPD_LAT + 2e-4, padLo = halfW / (SEG_MPD_LAT * cl.coslat) + 2e-4;
+
+  // Phase 1: which runs' bounding boxes come near the corridor at all (cheap; no fetch).
+  const candidates = [];
   for (const f of state.routes.features) {
-    const track = f.geometry.coordinates.map(([lo, la]) => [la, lo]);
-    const legs = matchTrack(cl, track, halfW);
-    if (legs.length) matches.push({ id: f.properties.id, legs });
+    let lo = Infinity, hi = -Infinity, wlo = Infinity, whi = -Infinity;
+    for (const [ln, la] of f.geometry.coordinates) {
+      if (la < lo) lo = la; if (la > hi) hi = la; if (ln < wlo) wlo = ln; if (ln > whi) whi = ln;
+    }
+    if (hi < cl.bbox.minLa - pad || lo > cl.bbox.maxLa + pad ||
+        whi < cl.bbox.minLo - padLo || wlo > cl.bbox.maxLo + padLo) continue;
+    candidates.push(f.properties.id);
   }
-  const efforts = [];
-  await Promise.all(matches.map(async (m) => {
-    const d = await loadStream(m.id);
-    const st = d && d.stream;
-    // Leg indices come from the GPS polyline; the time/dist streams are index-aligned with
-    // it only when the run has no GPS-dropout rows (equal lengths). If they diverge, skip
-    // the run rather than read mismatched samples.
-    if (!st || !st.t || !st.dist_mi || !st.latlng) return;
-    if (st.latlng.length !== st.t.length || st.t.length !== st.dist_mi.length) return;
-    const run = state.runs.find((r) => r.id === m.id) || {};
+
+  // Phase 2: fetch the trajectory for each candidate and match + measure on it.
+  const efforts = [], matchedIds = new Set();
+  await Promise.all(candidates.map(async (id) => {
+    const d = await loadStream(id);
+    const tr = d && d.traj;
+    if (!tr || !tr.lat || tr.lat.length < 2 || !tr.t || !tr.dist_mi) return;
+    const track = tr.lat.map((la, i) => [la, tr.lon[i]]);
+    const legs = matchTrack(cl, track, halfW);
+    if (!legs.length) return;
+    matchedIds.add(id);
+    const run = state.runs.find((r) => r.id === id) || {};
     const date = (run.date || "").slice(0, 10);
     const ord = date ? Math.floor(Date.parse(date) / 864e5) : 0;
-    for (const leg of m.legs) {
-      const e = effortFromLeg(st, leg);
-      if (e) efforts.push({ id: m.id, date, type: run.type || "easy", ord, ...e });
+    for (const leg of legs) {
+      const e = effortFromLeg(tr, leg);   // tr.t/dist_mi/hr are index-aligned with tr.lat/lon
+      if (e) efforts.push({ id, date, type: run.type || "easy", ord, ...e });
     }
   }));
-  return efforts;
+  return { efforts, matchedIds };
 }
 
 // Shape raw efforts into the seg object showSegmentPanel expects. Directional keeps only
@@ -1083,7 +1200,6 @@ function showSegmentPanel(seg) {
     <p class="hint">Dots colored by run type. Click any dot to open that run.</p>
   </div>`;
   $("#seg-close").onclick = () => { panel.innerHTML = ""; };
-  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   const render = (d) => {
     const efs = d.efforts;

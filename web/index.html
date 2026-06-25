@@ -124,29 +124,46 @@
 
     <!-- MAP -->
     <section id="map" class="panel">
-      <div class="card">
-        <h2>Everywhere I've run</h2>
-        <p class="hint">All <span id="route-count"></span> GPS routes overlaid. Click a route to open the run.</p>
-        <div class="map-bar">
-          <div class="pr-controls" id="region-controls"></div>
-          <div class="map-toggles">
-            <span class="toggles-label">Overlay</span>
-            <button id="toggle-photos" class="toggle" aria-pressed="false">📷 Photos</button>
-            <button id="toggle-segments" class="toggle" aria-pressed="false">🏃 Segments</button>
-            <button id="toggle-draw" class="toggle" aria-pressed="false">✏️ Draw segment</button>
+      <div class="card map-card">
+        <div class="map-layout">
+          <aside class="map-side">
+            <div class="map-side-head">
+              <h2>Everywhere I've run</h2>
+              <p class="hint">All <span id="route-count"></span> GPS routes. Click a route to open the run.</p>
+            </div>
+            <div class="side-group">
+              <span class="side-label">Location</span>
+              <div class="region-list" id="region-controls"></div>
+            </div>
+            <div class="side-group">
+              <span class="side-label">Overlays</span>
+              <div class="overlay-list">
+                <button id="toggle-photos" class="toggle" aria-pressed="false">📷 Photos</button>
+                <button id="toggle-segments" class="toggle" aria-pressed="false">🏃 Repeated segments</button>
+                <button id="toggle-draw" class="toggle toggle-draw" aria-pressed="false">✏️ Draw a segment</button>
+              </div>
+            </div>
+            <div id="draw-controls" class="draw-panel hidden">
+              <p id="draw-hint" class="draw-hint">Drag across the map to paint a segment.</p>
+              <label class="draw-field">
+                <span>Brush width</span>
+                <span class="draw-range"><input type="range" id="draw-width" min="15" max="80" step="5" value="30"><b id="draw-width-val">30 m</b></span>
+              </label>
+              <div class="draw-field">
+                <span>Direction</span>
+                <div class="draw-dir">
+                  <button data-dir="1" class="active">Directional</button>
+                  <button data-dir="0">Either way</button>
+                </div>
+              </div>
+              <button id="draw-new" class="draw-new">✕ New segment</button>
+            </div>
+          </aside>
+          <div class="map-main">
+            <div id="heatmap" class="map"></div>
           </div>
+          <div id="segment-panel" class="map-results"></div>
         </div>
-        <div id="draw-controls" class="draw-bar hidden">
-          <span class="hint">Drag on the map to paint a segment, then see every run that ran it.</span>
-          <label class="draw-width">Brush <input type="range" id="draw-width" min="15" max="80" step="5" value="30"><span id="draw-width-val">30 m</span></label>
-          <div class="pr-controls draw-dir">
-            <button data-dir="1" class="active">Directional</button>
-            <button data-dir="0">Either way</button>
-          </div>
-          <button id="draw-new" class="toggle">✕ New segment</button>
-        </div>
-        <div id="heatmap" class="map"></div>
-        <div id="segment-panel"></div>
       </div>
     </section>
   </main>
