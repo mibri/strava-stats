@@ -589,13 +589,20 @@ function drawRows() {
 const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 /* ---------- run detail modal ---------- */
+// One per-run detail blob ({ stream, best_efforts, photos, ... }), from the in-browser
+// build's IndexedDB store or the Python build's streams/<id>.json. Used by both the run
+// modal and the drawn-segment matcher.
+async function loadStream(id) {
+  return state.fromBuild && window.StravaStore
+    ? await window.StravaStore.loadStream(id)
+    : await fetch(`${DATA}/streams/${id}.json`).then((x) => x.json()).catch(() => null);
+}
+
 let detailMap = null;
 async function openRun(id) {
   const r = state.runs.find((x) => x.id === id);
   if (!r) return;
-  const d = state.fromBuild && window.StravaStore
-    ? await window.StravaStore.loadStream(id)
-    : await fetch(`${DATA}/streams/${id}.json`).then((x) => x.json()).catch(() => null);
+  const d = await loadStream(id);
   const be = d && d.best_efforts || {};
   const beHtml = Object.entries(be).map(([k, v]) => `<span class="be">${k} <b>${v.t}</b></span>`).join("");
   const photos = (d && d.photos) || [];
@@ -685,9 +692,9 @@ function buildHeatmap() {
   state.routes.features.forEach((f) => {
     const latlng = f.geometry.coordinates.map(([lo, la]) => [la, lo]);
     const pl = L.polyline(latlng, { color: "#fc5200", weight: 2, opacity: 0.3 }).addTo(map);
-    pl.on("mouseover", () => pl.setStyle({ opacity: 1, weight: 4 }));
-    pl.on("mouseout", () => pl.setStyle({ opacity: 0.3, weight: 2 }));
-    pl.on("click", () => openRun(f.properties.id));
+    pl.on("mouseover", () => { if (!drawMode) pl.setStyle({ opacity: 1, weight: 4 }); });
+    pl.on("mouseout", () => { if (!drawMode) pl.setStyle({ opacity: 0.3, weight: 2 }); });
+    pl.on("click", () => { if (!drawMode) openRun(f.properties.id); });
     all.push(pl);
   });
 
@@ -762,7 +769,289 @@ function buildHeatmap() {
     btn.classList.add("active"); btn.setAttribute("aria-pressed", "true");
   };
 
+  // ---- Draw-a-segment: paint a corridor, see every run that ran it ----
+  const DRAW_TREND = { improving: "#45c08a", declining: "#ec5fa6", flat: "#7f8a99" };
+  const drawBtn = $("#toggle-draw");
+  const drawCtl = $("#draw-controls");
+  const widthInput = $("#draw-width");
+  const widthVal = $("#draw-width-val");
+  const widthM = () => +widthInput.value;
+  let drawMode = false, drawing = false, directional = true;
+  let stroke = null, raw = null, drawLayer = null, livePoly = null;
+
+  // Metric ±halfW buffer of the stroke, in lat/lon (so it stays correct at every zoom).
+  const bufferPolygon = (latlngs, halfW) => {
+    const coslat = Math.cos((latlngs[0][0] * Math.PI) / 180);
+    const toM = ([la, lo]) => [lo * SEG_MPD_LAT * coslat, la * SEG_MPD_LAT];
+    const toLL = ([x, y]) => [y / SEG_MPD_LAT, x / (SEG_MPD_LAT * coslat)];
+    const P = latlngs.map(toM), lft = [], rgt = [];
+    for (let i = 0; i < P.length; i++) {
+      const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+      let tx = b[0] - a[0], ty = b[1] - a[1];
+      const tl = Math.hypot(tx, ty) || 1;
+      const nx = (-ty / tl) * halfW, ny = (tx / tl) * halfW;   // left normal × halfW
+      lft.push([P[i][0] + nx, P[i][1] + ny]);
+      rgt.push([P[i][0] - nx, P[i][1] - ny]);
+    }
+    return lft.concat(rgt.reverse()).map(toLL);
+  };
+
+  const clearDraw = () => {
+    if (drawLayer) { map.removeLayer(drawLayer); drawLayer = null; }
+    stroke = null; raw = null; livePoly = null;
+    $("#segment-panel").innerHTML = "";
+  };
+
+  const renderDraw = () => {
+    if (!stroke || stroke.length < 2 || !raw) return;
+    const cl = buildCenterline(stroke);
+    const seg = aggregateDrawn(raw, Math.round((cl.total / SEG_MI_M) * 100) / 100, segDirLabel(stroke), directional);
+    const col = DRAW_TREND[seg.trend.label] || "#7f8a99";
+    if (drawLayer) map.removeLayer(drawLayer);
+    drawLayer = L.layerGroup().addTo(map);
+    L.polygon(bufferPolygon(stroke, widthM() / 2), { color: col, weight: 1, opacity: 0.5, fillOpacity: 0.12, interactive: false }).addTo(drawLayer);
+    L.polyline(stroke, { color: col, weight: 3, opacity: 0.95, interactive: false }).addTo(drawLayer);
+    L.circleMarker(stroke[0], { radius: 5, color: "#fff", weight: 2, fillColor: col, fillOpacity: 1, interactive: false }).addTo(drawLayer);
+    const p = stroke[stroke.length - 1], q = stroke[stroke.length - 2];
+    const ang = (Math.atan2((p[1] - q[1]) * Math.cos((p[0] * Math.PI) / 180), p[0] - q[0]) * 180) / Math.PI;
+    const arrow = L.divIcon({ className: "", iconSize: [18, 18], html: `<div style="transform:rotate(${ang}deg);color:${col};font-size:18px;line-height:18px;text-shadow:0 0 2px #000">▲</div>` });
+    L.marker(p, { icon: arrow, interactive: false }).addTo(drawLayer);
+    if (seg.n_runs) showSegmentPanel(seg);
+    else {
+      $("#segment-panel").innerHTML = `<div class="card seg-card"><button class="seg-close" id="seg-close">✕</button>
+        <h2>Drawn segment</h2><p class="hint">No runs cover this stretch. Try a wider brush or a different section.</p></div>`;
+      $("#seg-close").onclick = () => { $("#segment-panel").innerHTML = ""; };
+    }
+  };
+
+  const runMatch = async () => {
+    if (!stroke || stroke.length < 2) return;
+    $("#segment-panel").innerHTML = `<div class="card seg-card"><p class="hint">Matching runs…</p></div>`;
+    raw = await matchDrawnEfforts(buildCenterline(stroke), widthM());
+    renderDraw();
+  };
+
+  const enterDraw = () => {
+    if (segLayer) $("#toggle-segments").onclick();    // can't show both overlays at once
+    drawMode = true;
+    drawBtn.classList.add("active"); drawBtn.setAttribute("aria-pressed", "true");
+    drawCtl.classList.remove("hidden");
+    all.forEach((pl) => pl.setStyle({ opacity: 0.05 }));
+    map.dragging.disable();
+    map.getContainer().style.cursor = "crosshair";
+  };
+  const exitDraw = () => {
+    drawMode = false; drawing = false;
+    drawBtn.classList.remove("active"); drawBtn.setAttribute("aria-pressed", "false");
+    drawCtl.classList.add("hidden");
+    all.forEach((pl) => pl.setStyle({ opacity: 0.3 }));
+    map.dragging.enable();
+    map.getContainer().style.cursor = "";
+    clearDraw();
+  };
+  drawBtn.onclick = () => (drawMode ? exitDraw() : enterDraw());
+
+  map.on("mousedown", (e) => {
+    if (!drawMode) return;
+    drawing = true;
+    clearDraw();
+    stroke = [[e.latlng.lat, e.latlng.lng]];
+    drawLayer = L.layerGroup().addTo(map);
+    livePoly = L.polyline(stroke, { color: "#ffd23f", weight: 3, opacity: 0.95, interactive: false }).addTo(drawLayer);
+  });
+  map.on("mousemove", (e) => {
+    if (!drawMode || !drawing) return;
+    const last = stroke[stroke.length - 1];
+    const dM = Math.hypot((e.latlng.lat - last[0]) * SEG_MPD_LAT, (e.latlng.lng - last[1]) * SEG_MPD_LAT * Math.cos((last[0] * Math.PI) / 180));
+    if (dM < 5) return;                               // ~5 m sampling, keeps the stroke light
+    stroke.push([e.latlng.lat, e.latlng.lng]);
+    livePoly.setLatLngs(stroke);
+  });
+  map.on("mouseup", () => {
+    if (!drawMode || !drawing) return;
+    drawing = false;
+    if (!stroke || stroke.length < 2 || buildCenterline(stroke).total < 30) { clearDraw(); return; }
+    runMatch();
+  });
+
+  widthInput.oninput = () => { widthVal.textContent = `${widthM()} m`; };
+  widthInput.onchange = () => { if (stroke && stroke.length >= 2) runMatch(); };
+  drawCtl.querySelectorAll(".draw-dir button").forEach((b) => (b.onclick = () => {
+    drawCtl.querySelectorAll(".draw-dir button").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    directional = b.dataset.dir === "1";
+    if (raw) renderDraw();
+  }));
+  $("#draw-new").onclick = () => clearDraw();
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawMode) exitDraw(); });
+
   fit((buttons[1] || buttons[0]).bounds);
+}
+
+/* ---------- drawn-segment matcher ----------
+ * Match every run against a hand-drawn corridor. The drawn stroke is the centerline;
+ * a run point is "inside" if its perpendicular distance to that centerline <= half the
+ * brush width. Projecting each inside-point onto the centerline gives its arc-length
+ * position s (0=start A, 1=end B); a run "did" the segment if it covers >= SEG_COVER of
+ * that length without turning around. This is the same coverage/turnaround logic as the
+ * auto-miner (web/build/segments.js) but projected onto the *drawn* path instead of a
+ * fitted straight axis, so the stroke may curve. */
+const SEG_MPD_LAT = 111320.0;      // meters per degree latitude
+const SEG_COVER = 0.8;             // an effort must span >= 80% of the drawn length
+const SEG_GAP_PTS = 8;             // bridge this many off-corridor points within one pass
+const SEG_DIR8 = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+const SEG_MI_M = 1609.344;
+
+// Pre-project the drawn stroke into local east/north meters and accumulate arc length.
+function buildCenterline(latlngs) {
+  if (!latlngs || latlngs.length < 2) return null;
+  const coslat = Math.cos((latlngs[0][0] * Math.PI) / 180);
+  const ex = (lo) => lo * SEG_MPD_LAT * coslat;
+  const ny = (la) => la * SEG_MPD_LAT;
+  const pts = latlngs.map(([la, lo]) => [ex(lo), ny(la)]);
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = cum[cum.length - 1];
+  let minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
+  for (const [la, lo] of latlngs) { if (la < minLa) minLa = la; if (la > maxLa) maxLa = la; if (lo < minLo) minLo = lo; if (lo > maxLo) maxLo = lo; }
+  return { pts, cum, total, coslat, ex, ny, bbox: { minLa, maxLa, minLo, maxLo } };
+}
+
+// Nearest point on the centerline to a meter-coord (px,py): perpendicular distance + s.
+function projectToCenterline(cl, px, py) {
+  let bestD = Infinity, bestS = 0;
+  for (let i = 0; i < cl.pts.length - 1; i++) {
+    const ax = cl.pts[i][0], ay = cl.pts[i][1];
+    const dx = cl.pts[i + 1][0] - ax, dy = cl.pts[i + 1][1] - ay;
+    const seg2 = dx * dx + dy * dy;
+    let t = seg2 ? ((px - ax) * dx + (py - ay) * dy) / seg2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    if (d < bestD) { bestD = d; bestS = cl.total ? (cl.cum[i] + t * Math.sqrt(seg2)) / cl.total : 0; }
+  }
+  return { d: bestD, s: bestS };
+}
+
+// Clean traversals of the corridor by one run's track ([[lat,lon],...]); returns legs of
+// {lo, hi, dir} index spans (dir +1 = toward B). One-way = 1 leg, out-and-back = 2.
+function matchTrack(cl, track, halfW) {
+  const pad = halfW / SEG_MPD_LAT + 1e-4, padLo = halfW / (SEG_MPD_LAT * cl.coslat) + 1e-4;
+  let lo = Infinity, hi = -Infinity, wlo = Infinity, whi = -Infinity;
+  for (const [la, ln] of track) { if (la < lo) lo = la; if (la > hi) hi = la; if (ln < wlo) wlo = ln; if (ln > whi) whi = ln; }
+  if (hi < cl.bbox.minLa - pad || lo > cl.bbox.maxLa + pad || whi < cl.bbox.minLo - padLo || wlo > cl.bbox.maxLo + padLo) return [];
+
+  const inside = [];
+  for (let i = 0; i < track.length; i++) {
+    const pr = projectToCenterline(cl, cl.ex(track[i][1]), cl.ny(track[i][0]));
+    if (pr.d <= halfW) inside.push({ i, s: pr.s });
+  }
+  if (inside.length < 2) return [];
+
+  const groups = [];
+  let cur = [inside[0]];
+  for (let k = 1; k < inside.length; k++) {
+    if (inside[k].i - cur[cur.length - 1].i <= SEG_GAP_PTS) cur.push(inside[k]);
+    else { groups.push(cur); cur = [inside[k]]; }
+  }
+  groups.push(cur);
+
+  const legs = [];
+  for (const g of groups) {
+    if (g.length < 2) continue;
+    const sv = g.map((p) => p.s);
+    const argmax = sv.indexOf(Math.max(...sv)), argmin = sv.indexOf(Math.min(...sv));
+    const extMax = argmax !== 0 && argmax !== sv.length - 1 ? argmax : null;
+    const extMin = argmin !== 0 && argmin !== sv.length - 1 ? argmin : null;
+    const turn = extMax != null ? extMax : extMin;        // interior extreme = turnaround
+    const spans = turn ? [[0, turn], [turn, g.length - 1]] : [[0, g.length - 1]];
+    for (const [a, b] of spans) {
+      if (Math.abs(sv[b] - sv[a]) < SEG_COVER) continue;  // covers < 80% of the drawn length
+      legs.push({ lo: g[a].i, hi: g[b].i, dir: sv[b] > sv[a] ? 1 : -1 });
+    }
+  }
+  return legs;
+}
+
+// Distance/pace/HR/EF for one leg, read from the run's index-aligned stream arrays.
+function effortFromLeg(st, leg) {
+  if (!st.t || leg.hi >= st.t.length || !st.dist_mi) return null;
+  const dt = st.t[leg.hi] - st.t[leg.lo];
+  const dmi = st.dist_mi[leg.hi] - st.dist_mi[leg.lo];
+  if (!(dt > 0) || !(dmi > 0)) return null;
+  let sum = 0, n = 0;
+  for (let i = leg.lo; i <= leg.hi; i++) if (st.hr && st.hr[i] != null) { sum += st.hr[i]; n++; }
+  const hr = n ? sum / n : null;
+  return {
+    time_s: Math.round(dt * 10) / 10, pace_s: Math.round((dt / dmi) * 10) / 10,
+    hr: hr ? Math.round(hr * 10) / 10 : null,
+    ef: hr ? Math.round(((dmi * SEG_MI_M) / dt / hr) * 1e5) / 1e5 : null,
+    dir: leg.dir,
+  };
+}
+
+// Linear EF-vs-time fit → label (mirrors trend() in web/build/segments.js).
+function segTrend(efforts) {
+  const pts = efforts.filter((e) => e.ef != null).map((e) => [e.ord, e.ef]);
+  if (pts.length < 4) return { label: "flat", slope: null };
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+  let num = 0, den = 0;
+  for (let i = 0; i < xs.length; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+  const slope = den ? num / den : 0;
+  const span = Math.max(...xs) - Math.min(...xs);
+  const rel = span && my ? (slope * span) / my : 0;
+  return { label: rel > 0.03 ? "improving" : rel < -0.03 ? "declining" : "flat", slope };
+}
+
+function segDirLabel(latlngs) {
+  const [la0, lo0] = latlngs[0], [la1, lo1] = latlngs[latlngs.length - 1];
+  const dy = la1 - la0, dx = (lo1 - lo0) * Math.cos((la0 * Math.PI) / 180);
+  const bearing = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+  return SEG_DIR8[Math.floor((bearing + 22.5) / 45) % 8];
+}
+
+// Phase 1 (geometry on already-loaded routes) + phase 2 (fetch streams for matches only).
+// Returns the raw per-leg efforts keyed with run date/type; aggregation by direction is
+// deferred to aggregateDrawn so the Directional/Either-way toggle never re-fetches.
+async function matchDrawnEfforts(cl, widthM) {
+  const halfW = widthM / 2;
+  const matches = [];
+  for (const f of state.routes.features) {
+    const track = f.geometry.coordinates.map(([lo, la]) => [la, lo]);
+    const legs = matchTrack(cl, track, halfW);
+    if (legs.length) matches.push({ id: f.properties.id, legs });
+  }
+  const efforts = [];
+  await Promise.all(matches.map(async (m) => {
+    const d = await loadStream(m.id);
+    const st = d && d.stream;
+    // Leg indices come from the GPS polyline; the time/dist streams are index-aligned with
+    // it only when the run has no GPS-dropout rows (equal lengths). If they diverge, skip
+    // the run rather than read mismatched samples.
+    if (!st || !st.t || !st.dist_mi || !st.latlng) return;
+    if (st.latlng.length !== st.t.length || st.t.length !== st.dist_mi.length) return;
+    const run = state.runs.find((r) => r.id === m.id) || {};
+    const date = (run.date || "").slice(0, 10);
+    const ord = date ? Math.floor(Date.parse(date) / 864e5) : 0;
+    for (const leg of m.legs) {
+      const e = effortFromLeg(st, leg);
+      if (e) efforts.push({ id: m.id, date, type: run.type || "easy", ord, ...e });
+    }
+  }));
+  return efforts;
+}
+
+// Shape raw efforts into the seg object showSegmentPanel expects. Directional keeps only
+// the drawn A→B direction; "either way" keeps both (an out-and-back contributes two).
+function aggregateDrawn(raw, lengthMi, dirLabel, directional) {
+  const kept = (directional ? raw.filter((e) => e.dir > 0) : raw)
+    .slice()
+    .sort((a, b) => a.ord - b.ord || (a.date < b.date ? -1 : 1));
+  const efforts = kept.map((e) => ({ id: e.id, date: e.date, type: e.type, time_s: e.time_s, pace_s: e.pace_s, hr: e.hr, ef: e.ef }));
+  return {
+    name: "Drawn segment", length_mi: lengthMi, dir_label: dirLabel,
+    n_runs: efforts.length, trend: segTrend(kept), efforts, reverse: null,
+  };
 }
 
 // Trend panel for one segment: EF headline + pace & HR below, each effort a dot

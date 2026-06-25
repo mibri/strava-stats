@@ -200,6 +200,15 @@ tbody tr:hover { background: var(--bg-elev2); }
 .toggle.active::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .toggle:disabled { opacity: .45; cursor: default; }
 
+/* Draw-a-segment controls */
+.draw-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--accent-soft); }
+.draw-bar .hint { margin: 0; flex: 1 1 220px; }
+.draw-width { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.draw-width input[type=range] { accent-color: var(--accent); }
+.draw-width span { min-width: 34px; }
+.draw-bar .draw-dir { margin: 0; }
+#draw-new::before { display: none; }
+
 /* Segment trend panel */
 #segment-panel:empty { display: none; }
 .seg-card { position: relative; margin-top: 16px; }
