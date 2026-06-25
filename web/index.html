@@ -4,6 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Strava Stats</title>
+  <script>
+    // Apply the saved theme before paint (no flash); expose the toggle.
+    (function () {
+      if ((localStorage.getItem("theme") || "dark") === "light")
+        document.documentElement.setAttribute("data-theme", "light");
+      window.toggleTheme = function () {
+        var next = (localStorage.getItem("theme") || "dark") === "light" ? "dark" : "light";
+        localStorage.setItem("theme", next);
+        location.reload();
+      };
+    })();
+  </script>
   <link rel="preconnect" href="https://cdn.plot.ly" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
@@ -27,7 +39,8 @@
         <button class="tab" data-tab="runs">Runs</button>
         <button class="tab" data-tab="map">Map</button>
       </nav>
-      <a class="import-link" href="import.html" title="Import a different export or clear data">↻ Import</a>
+      <button class="hdr-btn icon theme-toggle" type="button" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle light or dark mode"><span class="ic-sun">☀</span><span class="ic-moon">☾</span></button>
+      <a class="hdr-btn" href="import.html" title="Import a different export or clear data">↻ Import</a>
     </div>
   </header>
 

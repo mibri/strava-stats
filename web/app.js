@@ -12,7 +12,15 @@ const TYPE_SYMBOLS = {
 };
 const TYPE_GLYPH = { easy: "●", long: "◆", workout: "▲", recovery: "■", race: "★" };
 const TYPE_ORDER = ["easy", "long", "workout", "recovery", "race"];
-const PLOT_FONT = { color: "#8b94a3", family: "-apple-system, Segoe UI, Roboto, sans-serif" };
+// Theme-aware chart/map colors, read from the active CSS variables (set by the theme
+// before this script runs), so charts and tiles match light or dark mode.
+const css = (v, fb) => (getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fb);
+const GRID = css("--grid", "#2a313c");
+const HOVER_BG = css("--hover-bg", "#1f242d");
+const HOVER_FG = css("--hover-fg", "#e7ecf3");
+const HOVER_BORDER = css("--hover-border", "#3a424f");
+const MAP_TILES = css("--map-tiles", "dark_all");
+const PLOT_FONT = { color: css("--muted", "#8b94a3"), family: "-apple-system, Segoe UI, Roboto, sans-serif" };
 
 const state = { runs: [], summary: null, routes: null, points: [],
   sortKey: "date", sortDir: -1, timeframe: "all", dateById: {} };
@@ -39,18 +47,18 @@ function paceAxis(values) {
   const start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step;
   const tickvals = [], ticktext = [];
   for (let t = start; t <= end; t += step) { tickvals.push(t); ticktext.push(fmtPace(t)); }
-  return { range: [end, start], tickvals, ticktext, gridcolor: "#2a313c", zeroline: false };
+  return { range: [end, start], tickvals, ticktext, gridcolor: GRID, zeroline: false };
 }
 
 const baseLayout = (over = {}) => ({
   paper_bgcolor: "transparent", plot_bgcolor: "transparent",
   font: PLOT_FONT, margin: { l: 56, r: 24, t: 16, b: 40 },
-  xaxis: { gridcolor: "#2a313c", zeroline: false, ...(over.xaxis || {}) },
-  yaxis: { gridcolor: "#2a313c", zeroline: false, ...(over.yaxis || {}) },
+  xaxis: { gridcolor: GRID, zeroline: false, ...(over.xaxis || {}) },
+  yaxis: { gridcolor: GRID, zeroline: false, ...(over.yaxis || {}) },
   legend: { orientation: "h", y: 1.12, font: { size: 11 } },
   hovermode: "closest",
-  hoverlabel: { bgcolor: "#1f242d", bordercolor: "#3a424f",
-    font: { family: PLOT_FONT.family, color: "#e7ecf3", size: 12 }, align: "left" },
+  hoverlabel: { bgcolor: HOVER_BG, bordercolor: HOVER_BORDER,
+    font: { family: PLOT_FONT.family, color: HOVER_FG, size: 12 }, align: "left" },
   ...over,
 });
 const CONFIG = { displayModeBar: false, responsive: true };
@@ -196,7 +204,7 @@ function renderOverview() {
   plot("overview-mileage", [{
     type: "bar", x: w.map((d) => d.x), y: w.map((d) => d.miles),
     marker: { color: "#fc5200" }, hovertemplate: "%{x}<br>%{y:.1f} mi<extra></extra>",
-  }], { yaxis: { title: "miles", gridcolor: "#2a313c" } });
+  }], { yaxis: { title: "miles", gridcolor: GRID } });
 
   renderCalendar();
   renderPhotoStrip();
@@ -292,7 +300,7 @@ function renderProgression() {
       marker: { color: "#fc520099" }, hovertemplate: "%{x}<br>%{y:.1f} mi<extra></extra>" },
     { type: "scatter", mode: "lines", name: "4-wk avg", x: w.map((d) => d.x),
       y: rolling(w.map((d) => d.miles), 4), line: { color: "#ffd23f", width: 3 } },
-  ], { yaxis: { title: "miles", gridcolor: "#2a313c" } });
+  ], { yaxis: { title: "miles", gridcolor: GRID } });
 
   // Race times — actual bests vs projected (combined, distance-selectable)
   drawRaces();
@@ -307,22 +315,22 @@ function renderProgression() {
       line: { color: "#fc5200", width: 2, dash: "dot" } },
   ], {
     margin: { l: 56, r: 64, t: 16, b: 40 },
-    yaxis: { title: "load", gridcolor: "#2a313c" },
+    yaxis: { title: "load", gridcolor: GRID },
     yaxis2: { title: { text: "form", standoff: 16 }, overlaying: "y", side: "right",
-      zeroline: true, zerolinecolor: "#2a313c", showgrid: false, automargin: true },
+      zeroline: true, zerolinecolor: GRID, showgrid: false, automargin: true },
   });
 
   // Injury-risk ACWR
   const acwr = fit.filter((d) => d.acwr != null);
   plot("chart-acwr", [
     { type: "scatter", mode: "lines", x: acwr.map((d) => d.date), y: acwr.map((d) => d.acwr),
-      line: { color: "#e7ecf3", width: 2 }, hovertemplate: "%{x}<br>ACWR %{y:.2f}<extra></extra>" },
+      line: { color: HOVER_FG, width: 2 }, hovertemplate: "%{x}<br>ACWR %{y:.2f}<extra></extra>" },
   ], {
     shapes: [
       { type: "rect", xref: "paper", x0: 0, x1: 1, y0: 0.8, y1: 1.3, fillcolor: "#45c08a18", line: { width: 0 } },
       { type: "rect", xref: "paper", x0: 0, x1: 1, y0: 1.5, y1: 3, fillcolor: "#e24b4a18", line: { width: 0 } },
     ],
-    yaxis: { title: "acute : chronic", gridcolor: "#2a313c", range: [0, Math.max(2, ...acwr.map((d) => d.acwr)) + 0.2] },
+    yaxis: { title: "acute : chronic", gridcolor: GRID, range: [0, Math.max(2, ...acwr.map((d) => d.acwr)) + 0.2] },
   });
 
   // Aerobic efficiency (easy/long runs)
@@ -346,7 +354,7 @@ function renderProgression() {
       line: { color: "#ffd23f", width: 3 } },
   ], {
     shapes: [{ type: "rect", xref: "paper", x0: 0, x1: 1, y0: -3, y1: 5, fillcolor: "#45c08a18", line: { width: 0 } }],
-    yaxis: { title: "HR drift (%)", gridcolor: "#2a313c" },
+    yaxis: { title: "HR drift (%)", gridcolor: GRID },
   }, true);
 
   // Cadence trend
@@ -357,7 +365,7 @@ function renderProgression() {
       text: cad.map((p) => `${p.date} · ${Math.round(p.cadence)} spm`), hovertemplate: "%{text}<extra></extra>" },
     { type: "scatter", mode: "lines", name: "trend", x: cad.map((p) => p.date), y: rolling(cad.map((p) => p.cadence), 8),
       line: { color: "#ffd23f", width: 3 } },
-  ], { yaxis: { title: "steps / min", gridcolor: "#2a313c" } }, true);
+  ], { yaxis: { title: "steps / min", gridcolor: GRID } }, true);
 
   // Heat vs pace
   const hot = pts.filter((p) => p.temp_f != null && ["easy", "long", "recovery"].includes(p.type));
@@ -366,7 +374,7 @@ function renderProgression() {
     marker: { color: "#fc5200", size: 7, opacity: 0.6 }, customdata: hot.map((p) => p.id),
     text: hot.map((p) => `${p.date} · ${Math.round(p.temp_f)}°F · ${fmtPace(p.pace_s)}/mi`),
     hovertemplate: "%{text}<extra></extra>",
-  }], { xaxis: { title: "temperature (°F)", gridcolor: "#2a313c" }, yaxis: { title: "pace (/mi)", ...paceAxis(hot.map((p) => p.pace_s)) } }, true);
+  }], { xaxis: { title: "temperature (°F)", gridcolor: GRID }, yaxis: { title: "pace (/mi)", ...paceAxis(hot.map((p) => p.pace_s)) } }, true);
 
   // When you run
   drawPatterns();
@@ -395,7 +403,7 @@ function drawEF(id, pts, key, ytitle) {
       hovertemplate: "%{text}<extra></extra>" },
     { type: "scatter", mode: "lines", name: "trend", x: pts.map((p) => p.date), y: rolling(y, 8),
       line: { color: "#ffd23f", width: 3 } },
-  ], { yaxis: { title: ytitle, gridcolor: "#2a313c" } }, true);
+  ], { yaxis: { title: ytitle, gridcolor: GRID } }, true);
 }
 
 function drawPatterns() {
@@ -405,13 +413,13 @@ function drawPatterns() {
   plot("chart-dow", [{
     type: "bar", x: names, y: dowRuns, marker: { color: "#4f93ff" },
     hovertemplate: "%{x}<br>%{y} runs<extra></extra>",
-  }], { margin: { l: 40, r: 12, t: 10, b: 32 }, yaxis: { title: "runs", gridcolor: "#2a313c" } });
+  }], { margin: { l: 40, r: 12, t: 10, b: 32 }, yaxis: { title: "runs", gridcolor: GRID } });
 
   const hours = Array.from({ length: 24 }, (_, h) => (p.hours.find((x) => x.hour === h) || {}).runs || 0);
   plot("chart-hour", [{
     type: "bar", x: hours.map((_, h) => `${h}`), y: hours, marker: { color: "#fc5200" },
     hovertemplate: "%{x}:00<br>%{y} runs<extra></extra>",
-  }], { margin: { l: 40, r: 12, t: 10, b: 32 }, xaxis: { title: "hour of day", gridcolor: "#2a313c" }, yaxis: { title: "runs", gridcolor: "#2a313c" } });
+  }], { margin: { l: 40, r: 12, t: 10, b: 32 }, xaxis: { title: "hour of day", gridcolor: GRID }, yaxis: { title: "runs", gridcolor: GRID } });
 }
 
 function setupPaceControls() {
@@ -512,7 +520,7 @@ function drawRaces() {
   }
   const ticks = []; for (let t = Math.ceil(yLo / 300) * 300; t <= yHi; t += (yHi - yLo > 3600 ? 900 : 300)) ticks.push(t);
   plot("chart-races", traces, {
-    yaxis: { title: "time", range: [yHi, yLo], gridcolor: "#2a313c", tickvals: ticks, ticktext: ticks.map(fmtDur) },
+    yaxis: { title: "time", range: [yHi, yLo], gridcolor: GRID, tickvals: ticks, ticktext: ticks.map(fmtDur) },
   }, true);
 }
 
@@ -528,7 +536,7 @@ function drawZones() {
     text: z.map((x) => `${x.time_h}h`), textposition: "auto",
     hovertemplate: "%{y}<br>%{x:.1f} h · %{customdata} runs<extra></extra>",
   }], { margin: { l: 96, r: 24, t: 16, b: 36 },
-    xaxis: { title: `hours (HRmax est. ${hz.hrmax})`, gridcolor: "#2a313c" }, yaxis: { gridcolor: "#2a313c" } });
+    xaxis: { title: `hours (HRmax est. ${hz.hrmax})`, gridcolor: GRID }, yaxis: { gridcolor: GRID } });
 }
 
 
@@ -622,7 +630,7 @@ async function openRun(id) {
     if (detailMap) { detailMap.remove(); detailMap = null; }
     if (st.latlng && st.latlng.length) {
       detailMap = L.map("detail-map", { attributionControl: false, zoomControl: true });
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(detailMap);
+      L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(detailMap);
       const line = L.polyline(st.latlng, { color: "#fc5200", weight: 4 }).addTo(detailMap);
       detailMap.fitBounds(line.getBounds(), { padding: [20, 20] });
       L.circleMarker(st.latlng[0], { radius: 5, color: "#45c08a", fillOpacity: 1 }).addTo(detailMap);
@@ -642,8 +650,8 @@ async function openRun(id) {
     plot(`ds-${t.key}`, [{
       type: "scatter", mode: "lines", x, y: t.y, line: { color: t.color, width: 2 }, connectgaps: true,
       fill: t.fill ? "tozeroy" : undefined, fillcolor: t.fill ? t.color + "22" : undefined,
-    }], { margin: { l: 50, r: 16, t: 6, b: 30 }, xaxis: { title: xt, gridcolor: "#2a313c" },
-        yaxis: t.pace ? paceAxis(t.y) : { gridcolor: "#2a313c" }, height: 180 });
+    }], { margin: { l: 50, r: 16, t: 6, b: 30 }, xaxis: { title: xt, gridcolor: GRID },
+        yaxis: t.pace ? paceAxis(t.y) : { gridcolor: GRID }, height: 180 });
   });
 
   if (d && d.splits && d.splits.length) {
@@ -671,7 +679,7 @@ function buildHeatmap() {
   }
   $("#route-count").textContent = state.routes.features.length;
   const map = L.map("heatmap", { attributionControl: false });
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(map);
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(map);
 
   const all = [];
   state.routes.features.forEach((f) => {
@@ -809,16 +817,16 @@ function showSegmentPanel(seg) {
     plot("seg-ef", [
       dots(efy, (e) => `EF ${e.ef != null ? e.ef.toFixed(4) : "—"}`),
       { type: "scatter", mode: "lines", x, y: rolling(efy, 5), line: { color: "#ffd23f", width: 2 }, hoverinfo: "skip", showlegend: false },
-    ], { margin: { l: 56, r: 16, t: 8, b: 34 }, xaxis: { gridcolor: "#2a313c" },
-         yaxis: { title: "EF (speed ÷ HR)", gridcolor: "#2a313c" }, height: 210 }, true);
+    ], { margin: { l: 56, r: 16, t: 8, b: 34 }, xaxis: { gridcolor: GRID },
+         yaxis: { title: "EF (speed ÷ HR)", gridcolor: GRID }, height: 210 }, true);
 
     const py = efs.map((e) => e.pace_s);
     plot("seg-pace", [dots(py, (e) => `${fmtPace(e.pace_s)}/mi`)],
-      { margin: { l: 52, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: paceAxis(py), height: 160 }, true);
+      { margin: { l: 52, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: GRID }, yaxis: paceAxis(py), height: 160 }, true);
 
     const hy = efs.map((e) => e.hr);
     plot("seg-hr", [dots(hy, (e) => `${e.hr != null ? Math.round(e.hr) : "—"} bpm`)],
-      { margin: { l: 46, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: "#2a313c" }, yaxis: { gridcolor: "#2a313c" }, height: 160 }, true);
+      { margin: { l: 46, r: 12, t: 6, b: 30 }, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID }, height: 160 }, true);
   };
 
   panel.querySelectorAll(".seg-dirs button").forEach((b) => (b.onclick = () => {
