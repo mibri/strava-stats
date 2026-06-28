@@ -39,6 +39,20 @@ const fmtDur = (s) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`;
 };
 const num = (n, d = 0) => (n == null || !isFinite(n) ? "—" : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));
+const reduceMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Count a hero number up from 0 to its value on first paint (eased). Tabular figures keep
+// the tile from reflowing as digits change. Honors the reduced-motion preference.
+function countUp(el, target, decimals, unit) {
+  const html = (v) => `${num(v, decimals)}<span class="unit">${unit}</span>`;
+  if (reduceMotion() || !isFinite(target)) { el.innerHTML = html(target); return; }
+  const dur = 750, t0 = performance.now(), ease = (p) => 1 - Math.pow(1 - p, 3);
+  requestAnimationFrame(function tick(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    el.innerHTML = html(target * ease(p));
+    if (p < 1) requestAnimationFrame(tick);
+  });
+}
 
 function paceAxis(values) {
   const v = values.filter((x) => x != null && isFinite(x)).sort((a, b) => a - b);
@@ -127,7 +141,46 @@ async function boot() {
   renderProgression();
   renderRuns();
   setupTabs();
+  setupChartReveals();
   if (SAMPLE) showSampleBanner();
+}
+
+// Charts start hidden (`chart-pending`, applied before the first paint so there's no
+// render-then-blink-out flash) and animate in when their panel is shown — driven by the tab
+// switch, not a scroll observer (which fires sluggishly after a display:none→block and would
+// leave the panel blank for a beat). Overview re-animates on each visit; progression plays
+// exactly once (its reveal class is dropped on animationend so re-showing the tab — which
+// restarts CSS animations on display:none→block — can't replay it).
+let progressionRevealed = false;
+function setupChartReveals() {
+  if (reduceMotion()) return;
+  document.querySelectorAll(".chart").forEach((c) => c.classList.add("chart-pending"));
+  // Reveal the panel active at load (overview) once its hidden state has actually painted.
+  requestAnimationFrame(() => requestAnimationFrame(() => revealPanelCharts("overview")));
+}
+
+function revealPanelCharts(panelId) {
+  if (reduceMotion()) return;
+  const charts = document.querySelectorAll(`#${panelId} .chart`);
+  if (!charts.length) return;
+  if (panelId === "progression") {
+    if (progressionRevealed) return;
+    progressionRevealed = true;
+    charts.forEach((el) => {
+      el.classList.remove("chart-pending");
+      el.classList.add("chart-reveal");
+      el.addEventListener("animationend", function off() {
+        el.removeEventListener("animationend", off);
+        el.classList.remove("chart-reveal");
+      });
+    });
+  } else {
+    charts.forEach((el) => {
+      el.classList.remove("chart-pending", "chart-reveal");
+      void el.offsetWidth;                 // restart the CSS animation on each visit
+      el.classList.add("chart-reveal");
+    });
+  }
 }
 
 // Demo banner: make it obvious these aren't your runs, with a one-click path to import.
@@ -145,12 +198,20 @@ let mapBuilt = false;
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.onclick = () => {
+      if (btn.classList.contains("active")) return;   // already on this tab — don't re-reveal
       document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
       document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
       btn.classList.add("active");
       const id = btn.dataset.tab;
       $(`#${id}`).classList.add("active");
-      if (id === "map" && !mapBuilt) { buildHeatmap(); mapBuilt = true; }
+      if (id === "map") {
+        if (!mapBuilt) { buildHeatmap(); mapBuilt = true; }
+        // Returning to an already-built map: the container was display:none, so Leaflet's
+        // cached size is stale. Recompute it immediately (the throttled window-resize path
+        // is what left the map blank for a beat).
+        else if (state.heatmap) state.heatmap.invalidateSize();
+      }
+      revealPanelCharts(id);
       window.dispatchEvent(new Event("resize"));
     };
   });
@@ -199,14 +260,16 @@ function inFrame(dateStr) {
 function renderOverview() {
   const t = state.summary.totals;
   const stats = [
-    { val: num(t.miles), unit: "mi", lbl: "Total distance" },
-    { val: num(t.runs), unit: "", lbl: "Runs logged" },
-    { val: num(t.hours), unit: "h", lbl: "Time on feet" },
-    { val: num(t.elev_ft), unit: "ft", lbl: "Elevation climbed" },
-    { val: num(t.calories / 1000, 1), unit: "k", lbl: "Calories burned" },
+    { target: t.miles, d: 0, unit: "mi", lbl: "Total distance" },
+    { target: t.runs, d: 0, unit: "", lbl: "Runs logged" },
+    { target: t.hours, d: 0, unit: "h", lbl: "Time on feet" },
+    { target: t.elev_ft, d: 0, unit: "ft", lbl: "Elevation climbed" },
+    { target: t.calories / 1000, d: 1, unit: "k", lbl: "Calories burned" },
   ];
   $("#hero").innerHTML = stats.map((s) =>
-    `<div class="stat"><div class="val">${s.val}<span class="unit">${s.unit}</span></div><div class="lbl">${s.lbl}</div></div>`).join("");
+    `<div class="stat"><div class="val"></div><div class="lbl">${s.lbl}</div></div>`).join("");
+  $("#hero").querySelectorAll(".stat .val").forEach((el, i) =>
+    countUp(el, stats[i].target, stats[i].d, stats[i].unit));
 
   const fun = [
     { e: "🌍", big: `${t.earth_pct}%`, sub: "of the way around the Earth (24,901 mi)" },
@@ -247,16 +310,20 @@ function renderCalendar() {
   const today = new Date();
 
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // Sweep timing: each week-column lights up CAL_COL_STEP after the previous, and each
+  // year block starts CAL_YEAR_STAGGER after the one above it (newest is on top).
+  const CAL_COL_STEP = 9, CAL_YEAR_STAGGER = 110;
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const blocks = years.map((yr) => {
+  const blocks = years.map((yr, yi) => {
     const start = new Date(yr, 0, 1); start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // back to Monday
     const end = new Date(yr, 11, 31); end.setDate(end.getDate() + ((7 - end.getDay()) % 7));        // forward to Sunday
     const cells = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      if (d.getFullYear() != yr || d > today) { cells.push(`<div class="cal-cell future"></div>`); continue; }
+      const delay = yi * CAL_YEAR_STAGGER + Math.floor(cells.length / 7) * CAL_COL_STEP; // column = cells/7
+      if (d.getFullYear() != yr || d > today) { cells.push(`<div class="cal-cell future" style="--cal-d:${delay}ms"></div>`); continue; }
       const k = iso(d); const mi = byDate[k] || 0;
       const click = state.dateById[k] ? ` data-id="${state.dateById[k]}"` : "";
-      cells.push(`<div class="cal-cell${mi > 0 ? " has" : ""}"${click} title="${k}: ${mi.toFixed(1)} mi" style="background:${color(mi)}"></div>`);
+      cells.push(`<div class="cal-cell${mi > 0 ? " has" : ""}"${click} title="${k}: ${mi.toFixed(1)} mi" style="--cal-d:${delay}ms;background:${color(mi)}"></div>`);
     }
     const ncols = Math.round(cells.length / 7);
     // place each month label at the week-column where its 1st falls
@@ -269,9 +336,20 @@ function renderCalendar() {
     </div>`;
   }).join("");
 
-  $("#calendar").innerHTML = blocks +
+  const calEl = $("#calendar");
+  calEl.innerHTML = blocks +
     `<div class="cal-legend">Less ${ramp.map((c) => `<i style="background:${c}"></i>`).join("")} More</div>`;
-  $("#calendar").querySelectorAll(".cal-cell.has[data-id]").forEach((c) => (c.onclick = () => openRun(c.dataset.id)));
+  calEl.querySelectorAll(".cal-cell.has[data-id]").forEach((c) => (c.onclick = () => openRun(c.dataset.id)));
+
+  // Run the day-by-day sweep only once the calendar is actually on screen (it usually sits
+  // below the fold) so the animation isn't wasted before the user scrolls to it. Without
+  // the class — or under reduced motion — the cells simply render in place.
+  if (window.IntersectionObserver && !reduceMotion()) {
+    const io = new IntersectionObserver((entries, obs) => {
+      entries.forEach((e) => { if (e.isIntersecting) { calEl.classList.add("cal-in-view"); obs.disconnect(); } });
+    }, { threshold: 0.08 });
+    io.observe(calEl);
+  }
 }
 
 function renderPhotoStrip() {
@@ -761,6 +839,7 @@ function buildHeatmap() {
   }
   $("#route-count").textContent = state.routes.features.length;
   const map = L.map("heatmap", { attributionControl: false });
+  state.heatmap = map;   // kept so tab-return can invalidateSize without a blank flash
   L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(map);
   // The results column narrows/widens the map; keep Leaflet's view in sync with its box.
   if (window.ResizeObserver) {
@@ -1019,7 +1098,58 @@ function buildHeatmap() {
   $("#draw-new").onclick = () => { clearDraw(); arm(); };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && session) endSession(); });
 
-  fit((buttons[1] || buttons[0]).bounds);
+  // Initial view: fit without a zoom animation so each route path sits at its final
+  // projection, then "draw" the runs in from start to end (first map open only).
+  setTimeout(() => {
+    map.invalidateSize();
+    map.fitBounds((buttons[1] || buttons[0]).bounds, { padding: [30, 30], animate: false });
+    requestAnimationFrame(() => animateRoutesDraw(map, all));
+  }, 90);
+}
+
+// First-load flourish: draw each route from start→end by easing its SVG path's
+// stroke-dashoffset to zero. Guards keep it robust: skipped under reduced motion or when
+// the path isn't SVG; the dash styling is stripped on completion so later zooms render
+// solid lines; and any zoom/pan mid-draw finalizes immediately (a fixed dash length would
+// otherwise smear once Leaflet re-projects the path at a new zoom).
+function animateRoutesDraw(map, plines) {
+  if (reduceMotion()) return;
+  const dateById = {};
+  state.runs.forEach((r) => { dateById[r.id] = r.date || ""; });
+  const items = [];
+  plines.forEach((pl) => {
+    const path = pl.getElement && pl.getElement();
+    if (!path || !path.getTotalLength) return;
+    let len; try { len = path.getTotalLength(); } catch (e) { return; }
+    if (!len) return;
+    path.style.transition = "none";
+    path.style.strokeDasharray = String(len);
+    path.style.strokeDashoffset = String(len);
+    items.push({ path, date: dateById[pl._rid] || "" });
+  });
+  if (!items.length) return;
+  // Draw oldest → newest so you watch the map fill in chronologically. The stagger budget
+  // is fixed (~1s total) regardless of run count, so a long history still cascades briskly.
+  items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const step = Math.min(22, 1000 / items.length);
+
+  let done = false;
+  const finish = () => {
+    if (done) return; done = true;
+    items.forEach(({ path }) => { path.style.transition = ""; path.style.strokeDasharray = ""; path.style.strokeDashoffset = ""; });
+    map.off("zoomstart movestart", finish);
+  };
+  map.on("zoomstart movestart", finish);
+
+  map.getContainer().getBoundingClientRect();   // one reflow to lock in the dashed start state
+  requestAnimationFrame(() => {
+    items.forEach((it, rank) => {
+      it.path.style.transition = `stroke-dashoffset .85s ease ${Math.round(rank * step)}ms`;
+      it.path.style.strokeDashoffset = "0";
+    });
+    const last = items[items.length - 1].path;   // newest route finishes last
+    last.addEventListener("transitionend", function end() { last.removeEventListener("transitionend", end); finish(); });
+  });
 }
 
 /* ---------- drawn-segment matcher ----------
