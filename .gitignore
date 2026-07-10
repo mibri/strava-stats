@@ -221,6 +221,9 @@ __marimo__/
 .venv/
 data/
 !data/.gitkeep
+# private coaching session notes — public repo, keep these local-only
+coach/conversations/*
+!coach/conversations/.gitkeep
 *.zip
 .DS_Store
 # The web app's JS modules live in web/build/ — NOT a Python build dir, so re-include

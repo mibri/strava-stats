@@ -20,18 +20,18 @@ _HRmax 193. Key evidence: 7/5 twenty-miler (8:34 GAP, HR 143–150, negative spl
 
 ### This week — last real week (~40 mi)
 - **Thu 7/9:** easy 5–6, HR ≤135
-- **Fri 7/10:** rest (or 3 recovery if legs want to move)
-- **Sat 7/11:** ⭐ **Long 15–16, last 6 mi @ 8:20–8:25.** THE BENCHMARK: HR ≤152 on those miles ⇒ green-lights the faster race plan; HR 158+ ⇒ 3:45 plan stands. Start early AM (race-start rehearsal), full fueling 60–80 g/hr, race breakfast 2.5–3h before.
-- **Sun 7/12:** recovery 4, genuinely slow
+- **Fri 7/10:** easy 4 (or rest)
+- **Sat 7/11:** rest
+- **Sun 7/12:** ⭐ **Long 15–16, last 6 mi @ 8:20–8:25.** THE BENCHMARK: HR ≤152 on those miles ⇒ green-lights the faster race plan; HR 158+ ⇒ 3:45 plan stands. Start early AM (race-start rehearsal), full fueling 60–80 g/hr, race breakfast 2.5–3h before.
 
-### Week of 7/13 — taper begins (~33–36 mi)
+### Week of 7/13 — taper begins (~33–35 mi)
 - **Mon 7/13:** rest
-- **Tue 7/14:** 7 mi w/ 2×3 mi @ marathon effort (8:25–8:30), ~half-mile jog between
-- **Wed 7/15:** easy 5
-- **Thu 7/16:** easy 6 + 6×20s strides
+- **Tue 7/14:** recovery 4, genuinely slow
+- **Wed 7/15:** 7 mi w/ 2×3 mi @ marathon effort (8:25–8:30), ~half-mile jog between
+- **Thu 7/16:** easy 5
 - **Fri 7/17:** rest
-- **Sat 7/18:** medium-long 10–11 easy, rolling terrain, second fueling rehearsal, early AM
-- **Sun 7/19:** recovery 4
+- **Sat 7/18:** easy 5 + 6×20s strides
+- **Sun 7/19:** medium-long 10–11 easy, rolling terrain, second fueling rehearsal, early AM
 
 ### Race week (~17 mi + race)
 - **Mon 7/20:** rest
@@ -45,4 +45,4 @@ _HRmax 193. Key evidence: 7/5 twenty-miler (8:34 GAP, HR 143–150, negative spl
 ## Rules that override everything
 - **Knee/ITB:** any recurrence of the 6/23 uphill knee niggle → cut the marathon-pace work, keep easy volume. Fitness is banked; taper can only be subtracted from.
 - Feeling flat mid-taper week is normal and expected. Do not add runs to fix it.
-- No new shoes, gels, or breakfast experiments after 7/18.
+- No new shoes, gels, or breakfast experiments after 7/19.

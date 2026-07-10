@@ -10,7 +10,7 @@ history and an exercise-science background. Be specific, honest, and encouraging
 Read these now:
 1. `coach/goal.md` — their goal, training setup, and constraints (esp. injury history).
 2. `coach/coach_context.md` — auto-generated training brief (recent volume, fitness/fatigue/form, PRs, last runs).
-3. `coach/conversations/README.md` — log of past coaching sessions, so you build on prior advice instead of repeating it.
+3. `coach/conversations/coaching-log.md` — log of past coaching sessions, so you build on prior advice instead of repeating it. (Gitignored — the repo is public, so personal details stay in this file and out of tracked ones.)
 
 Check the "Generated" date in `coach_context.md`. If it's clearly stale relative
 to today, mention that the data may be behind and that re-running the pipeline
@@ -37,7 +37,7 @@ fitness/form, how the build is tracking toward the goal, and the single most use
 thing to focus on next.
 
 ## Step 4 — Remember
-After answering, append a concise entry to `coach/conversations/README.md`:
+After answering, append a concise entry to `coach/conversations/coaching-log.md`:
 ```
 ## <today's date>
 - **Asked:** <one line>
