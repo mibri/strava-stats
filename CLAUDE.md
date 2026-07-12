@@ -10,7 +10,11 @@ Personal running analytics + LLM coach over a Strava export. Single user, runs l
   - `metrics.py` — best efforts, mile splits, stream downsampling, Riegel.
   - `build.py` — orchestrator + run classification + aggregates.
   - `coach_context.py` — writes `coach/coach_context.md`.
-  - `strava_api.py` — stub for future live sync (keep the export-compatible contract).
+  - `strava_api.py` — live sync from the Strava API in the export-compatible layout
+    (appends to `activities.csv`, writes GPX w/ HR to `data/activities/`). One-time
+    `--auth` flow stores tokens in gitignored `data/strava_config.json`; then
+    `python -m pipeline.strava_api --build` pulls new runs and rebuilds. Stdlib-only.
+    API rows lack weather + GAP columns (export-only fields) — the pipeline tolerates both.
 - `web/` — static dashboard (vanilla JS + Plotly + Leaflet). `python web/serve.py`
   serves repo root so the page can fetch `../data/clean/*`. No build step.
 - `coach/` — `goal.md` (hand-edited), `coach_context.md` (generated),

@@ -9,7 +9,7 @@ _HRmax 193. Key evidence: 7/5 twenty-miler (8:34 GAP, HR 143–150, negative spl
 |---|---|---|---|---|
 | Miles 1–5 | Flat Embarcadero, Fort Mason bump | with 3:45 group (~8:35) | **≤ 148** | Feels embarrassingly easy. Good. First gel ~mile 4. |
 | Miles 6–12 | Bridge climbs, Marin turnaround, Sea Cliff | by effort, ignore clock | **148–153 sustained; spikes to 160–163 OK on climbs** | Recovery check: HR back under ~152 within 2–3 min of cresting. If pacer pushes past caps on a climb, let a gap open — close it on the descent. Short quick steps downhill (ITB). |
-| **Mile 12–13** | Entering Golden Gate Park | **DECISION 1** | — | Green light = HR settled ≤150, legs fresh, fueling on schedule → drift to 8:20–8:25. Do NOT surge to catch the 3:40 group. Otherwise stay with 3:45 group. |
+| **Mile 12–13** | Entering Golden Gate Park | **DECISION 1 — pre-authorized** | — | Aggressive branch GRANTED (7/12): default is to drift to 8:20–8:25 here — **unless** HR is >153 settled, legs feel off, or fueling has slipped. Do NOT surge to catch the 3:40 group. **Tripwire: HR ≥158 before mile 16 → back to 8:35s with the group, no debate.** |
 | Miles 13–19 | GG Park rolling | 8:25–8:35 | 152–157 | Should feel like miles 14–18 of the July 5 run. Haight descent ~mile 19–20: high cadence, no hammering (ITB). |
 | **Mile 20** | Flat from here | **DECISION 2** | — | HR ≤158 and legs present → close at 8:10–8:20, HR uncapped (160s+ is racing). Otherwise hold 8:35s and protect 3:45. |
 | Miles 20–26.2 | Mission/Potrero, flat | whatever you've earned | free | Expected race average: ~154–156 (≈80%), finishing near 87%. |
@@ -23,7 +23,7 @@ _Traveling for a wedding 7/9 → 7/19: run wherever you are. Shoes: **Tempus onl
 ### Travel block (7/9–7/18, ~38–40 then ~30 mi)
 - **Thu 7/9 (fly):** easy 5–6 before travel if possible, else rest
 - **Fri 7/10:** easy 4 (or rest — swap around wedding events as needed)
-- **Sat 7/11 or Sun 7/12** (whichever is clear of the wedding): ⭐ **Long 15–16, last 6 mi @ 8:25–8:32 (Tempus pace — equals 8:20–8:25 in the Pros).** THE BENCHMARK: HR ≤152 on those miles ⇒ green-lights the faster race plan; HR 158+ ⇒ 3:45 plan stands. If the route is hillier/flatter than SF, judge by HR + GAP, not raw pace. Full dress rehearsal: compressed race morning (small breakfast ~90 min before), 60–80 g carbs/hr, sodium protocol, Maurten audition, arch report. Other weekend day: rest.
+- **Sat 7/11 or Sun 7/12** (whichever is clear of the wedding): ⭐ **Long 15–16, last 6 mi @ 8:25–8:32 (Tempus pace — equals 8:20–8:25 in the Pros).** ✅ RUN 7/12 in West Lafayette heat/humidity: last 6 @ 8:23 (faster than prescribed), HR 164 raw ≈ low-150s SF-equivalent. Heat-adjusted pass; aggressive branch granted with tripwires. Mon 7/20 re-test is now a **veto-only** check. If the route is hillier/flatter than SF, judge by HR + GAP, not raw pace. Full dress rehearsal: compressed race morning (small breakfast ~90 min before), 60–80 g carbs/hr, sodium protocol, Maurten audition, arch report. Other weekend day: rest.
 - **Mon 7/13:** rest
 - **Tue 7/14:** recovery 4, genuinely slow
 - **Wed 7/15:** 7 mi w/ 2×3 mi @ marathon effort (8:30–8:37 in the Tempus), ~half-mile jog between
