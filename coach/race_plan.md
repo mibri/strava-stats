@@ -34,9 +34,10 @@ _Traveling for a wedding 7/9 → 7/19: run wherever you are. Shoes: **Tempus onl
 
 ### Back in SF (~race week -1 spillover)
 - **Sun 7/19 (return):** rest / travel day
-- **Mon 7/20:** medium-long 10–11 easy, second fueling + sodium rehearsal, early AM
+- **Mon 7/20:** ✅ RUN — 10.6 mi, 9:38 avg w/ 640 ft, closed 8:38; HR sensor failed, so MP validation moves to Wed. Uphill miles felt easy at faster-than-expected pace (freshness signal).
+- **HR CONTINGENCY (added 7/20):** watch HR must be verified working on Wed's run (snug strap, clean sensor, restart watch). If HR dies on RACE DAY: pace the first half strictly by the 3:45 group + talk test (full conversational sentences through mile 13 = correct effort); Decision 1 requires "breathing still nose-able/easy" instead of HR ≤153; abandon the aggressive branch if breathing turns rhythmic-hard before mile 16.
 - **Tue 7/21:** rest
-- **Wed 7/22:** 5 mi w/ 2 @ marathon effort (last tune-up)
+- **Wed 7/22:** ✅ 5 mi, ran mid-miles at HM pace (7:30–7:42) @ HR 148–158, uphill mile 4 @ 8:34/HR 157; EF 0.0222; HR sensor recorded clean. CONFIRMS green light — at true MP (8:20–8:25) HR projects to high-140s/low-150s, well under the 152 gate. Aggressive Decision-1 branch stands, validated.
 - **Thu 7/23:** rest
 - **Fri 7/24:** easy 3 + 4 strides; start carb-loading
 - **Sat 7/25:** rest or 15-min shakeout; carb-heavy early dinner + 9 PM snack, early night (start is 5:00 AM — shift bedtime earlier all week)
