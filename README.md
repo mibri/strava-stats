@@ -10,6 +10,11 @@ Three parts:
 3. **Coach** (`coach/` + `/coach`) — an LLM running coach that reads your full
    history. Runs through Claude Code on your subscription (no API key needed).
 
+## Roadmap
+
+See [`ROADMAP.md`](ROADMAP.md) for what's next and [`docs/design/`](docs/design/) for
+design docs on the larger items.
+
 ## Quick start
 
 ```bash
