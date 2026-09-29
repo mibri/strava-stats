@@ -135,8 +135,8 @@ async function renderCompare(idA, idB) {
   setTimeout(() => {
     if (cmpMap) { cmpMap.remove(); cmpMap = null; }
     const lines = [];
-    cmpMap = L.map("cmp-map", { attributionControl: false });
-    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(cmpMap);
+    cmpMap = L.map("cmp-map");
+    addBasemap(cmpMap);
     [[sa, CMP_A, "a"], [sb, CMP_B, "b"]].forEach(([s, c, k]) => {
       if (s.latlng && s.latlng.length) {
         lines.push(L.polyline(s.latlng, { color: c, weight: k === "a" ? 6 : 3.5, opacity: k === "a" ? 0.55 : 0.95 }).addTo(cmpMap));

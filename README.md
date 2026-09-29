@@ -90,6 +90,14 @@ Re-export from Strava and drop the new `activities.csv` + track files into
 `python -m pipeline.strava_api --build` pulls new runs from the Strava API and rebuilds.
 See the API-policy note in [`ROADMAP.md`](ROADMAP.md) before feeding API data to the coach.
 
+## Map tiles
+
+CARTO's gray basemaps need a free API key since Aug 2026 (without one, tiles are
+stamped "API KEY REQUIRED"). Without a key the maps use OpenStreetMap tiles, restyled to
+match the theme. For the CARTO look, get a key at <https://carto.com/basemaps/apikey>
+and set `CARTO_KEY` in `web/app.js`, or per browser run
+`localStorage.setItem("cartoKey", "<key>")` in the dev console.
+
 ## Tests
 
 ```bash

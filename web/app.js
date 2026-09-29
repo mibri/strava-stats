@@ -22,6 +22,24 @@ const HOVER_BG = css("--hover-bg", "#1f242d");
 const HOVER_FG = css("--hover-fg", "#e7ecf3");
 const HOVER_BORDER = css("--hover-border", "#3a424f");
 const MAP_TILES = css("--map-tiles", "dark_all");
+// Basemap. CARTO's raster tiles (the dark/light gray style) need a free API key since
+// Aug 2026 — without one every tile is stamped "API KEY REQUIRED". Get a key at
+// https://carto.com/basemaps/apikey and put it in CARTO_KEY (or, per browser,
+// localStorage.setItem("cartoKey", "…")). With no key we fall back to keyless
+// OpenStreetMap tiles, desaturated (and inverted in dark mode) by CSS to fit the theme.
+const CARTO_KEY = "";
+function addBasemap(map) {
+  let key = CARTO_KEY;
+  try { key = localStorage.getItem("cartoKey") || key; } catch (e) { /* storage blocked */ }
+  map.getContainer().classList.toggle("osm-tiles", !key);
+  if (map.attributionControl) map.attributionControl.setPrefix(false);
+  if (key) {
+    return L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(key)}`,
+      { maxZoom: 19, attribution: "© OpenStreetMap contributors © CARTO" }).addTo(map);
+  }
+  return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(map);
+}
 const PLOT_FONT = { color: css("--muted", "#8b94a3"), family: "-apple-system, Segoe UI, Roboto, sans-serif" };
 
 const state = { runs: [], summary: null, routes: null, points: [],
@@ -1100,8 +1118,8 @@ async function renderRun(id) {
     if (detailMap) { detailMap.remove(); detailMap = null; }
     const ll = routeLL;
     if (ll && ll.length && document.getElementById("detail-map")) {
-      detailMap = L.map("detail-map", { attributionControl: false, zoomControl: true });
-      L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(detailMap);
+      detailMap = L.map("detail-map", { zoomControl: true });
+      addBasemap(detailMap);
       detailMap.fitBounds(L.latLngBounds(ll), { padding: [20, 20] });
       drawRoute();
       L.circleMarker(ll[0], { radius: 5, color: "#45c08a", fillOpacity: 1 }).addTo(detailMap);
@@ -1209,9 +1227,9 @@ function buildHeatmap() {
     $("#heatmap").innerHTML = `<div class="muted" style="padding:40px">No GPS routes found.</div>`; return;
   }
   $("#route-count").textContent = state.routes.features.length;
-  const map = L.map("heatmap", { attributionControl: false });
+  const map = L.map("heatmap");
   state.heatmap = map;   // kept so tab-return can invalidateSize without a blank flash
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(map);
+  addBasemap(map);
   // The results column narrows/widens the map; keep Leaflet's view in sync with its box.
   if (window.ResizeObserver) {
     new ResizeObserver(() => requestAnimationFrame(() => map.invalidateSize({ animate: false })))

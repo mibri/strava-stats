@@ -649,3 +649,13 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: va
   .run-nav .accent { margin-left: 0; }
   .cmp-heads, .run-nav { margin-right: 44px; }
 }
+
+/* Keyless OpenStreetMap fallback basemap (see addBasemap in app.js): OSM's default
+   style is busy and bright, so quiet it down to sit behind the routes like the old
+   gray basemap did — desaturated in light mode, inverted to a dark map in dark mode. */
+.osm-tiles .leaflet-tile-pane { filter: saturate(.25) contrast(.92) brightness(1.03); }
+:root:not([data-theme="light"]) .osm-tiles .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) saturate(.2) brightness(.78) contrast(.95); }
+.leaflet-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--bg-elev) 80%, transparent); color: var(--muted); font-size: 10px; }
+.leaflet-container .leaflet-control-attribution a { color: var(--muted); }
