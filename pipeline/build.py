@@ -506,6 +506,9 @@ def _run_points(runs: pd.DataFrame) -> list[dict]:
             "decoup": _f(r["decoup"], 1),
             "stride_ft": _f(r["stride_ft"], 2), "stride_fade": _f(r["stride_fade_pct"], 1),
             "vam": _f(r["vam_ft_hr"], 0),
+            # Compact best efforts (label -> seconds) so the dashboard can draw the
+            # pace curve / trophy case over every distance without loading streams.
+            "be": {k: round(float(v), 1) for k, v in (r.get("_best_efforts") or {}).items()},
         })
     return out
 

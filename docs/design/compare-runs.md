@@ -1,6 +1,15 @@
 # Design: Compare two runs
 
-_Status: proposed · Size: L · Depends on: nothing_
+_Status: implemented 2026-09-29 (`web/compare.js`, math in `web/analytics.js`) · Size: L · Depends on: nothing_
+
+> **As built — differences from this proposal:**
+> - Alignment lives in `web/analytics.js` (`resample`, `alignRuns`), not `web/build/align.js`,
+>   and uses the display stream for `t` (not `traj`); good enough at ≤600 points.
+> - Same-route detection runs on the already-loaded `routes.geojson` geometry
+>   (`routeSimilarity`, 40 m grid hash) so the picker needs no stream fetches.
+> - The segment-name annotations on the gap chart and the elevation-card collapse for
+>   same-route pairs are not built yet.
+> - URL is `#compare/<a>/<b>` (and `#pick/<id>` for the picker), not `#compare=a,b`.
 
 ## Summary
 

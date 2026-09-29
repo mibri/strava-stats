@@ -37,10 +37,13 @@
       <nav id="tabs">
         <button class="tab active" data-tab="overview">Overview</button>
         <button class="tab" data-tab="progression">Progression</button>
+        <button class="tab" data-tab="records">Records</button>
+        <button class="tab" data-tab="years">Years</button>
         <button class="tab" data-tab="runs">Runs</button>
         <button class="tab" data-tab="map">Map</button>
       </nav>
       <button class="hdr-btn icon theme-toggle" type="button" onclick="toggleTheme()" title="Toggle light / dark" aria-label="Toggle light or dark mode"><span class="ic-sun">☀</span><span class="ic-moon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" fill="currentColor"/></svg></span></button>
+      <button class="hdr-btn icon" type="button" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
       <a class="hdr-btn" href="import.html" title="Import a different export or clear data">↻ Import</a>
     </div>
   </header>
@@ -49,13 +52,17 @@
     <!-- OVERVIEW -->
     <section id="overview" class="panel active">
       <div id="hero" class="stat-grid"></div>
+      <div class="card" id="glance"></div>
       <div class="card">
         <h2>Mileage by week</h2>
         <div id="overview-mileage" class="chart wipe"></div>
       </div>
       <div class="card">
-        <h2>Training calendar</h2>
-        <p class="hint">Daily miles — click a day to open the run.</p>
+        <div class="card-head">
+          <div><h2>Training calendar</h2>
+          <p class="hint" id="cal-hint">Daily miles — click a day to open the run.</p></div>
+          <div class="pr-controls" id="cal-metric"></div>
+        </div>
         <div id="calendar"></div>
       </div>
       <div class="card">
@@ -96,17 +103,89 @@
       <div class="card"><h2>Easy / hard balance</h2><p class="hint">Share of runs by type.</p><div id="chart-balance" class="chart"></div></div>
     </section>
 
+    <!-- RECORDS -->
+    <section id="records" class="panel">
+      <div class="card">
+        <h2>🏆 Trophy case</h2>
+        <p class="hint">Your fastest time at every distance — pulled from the best stretch of any run, not just races. Click one to open that run.</p>
+        <div id="trophies" class="trophy-grid"></div>
+      </div>
+      <div id="streaks" class="stat-grid streak-grid"></div>
+      <div class="card">
+        <h2>Pace curve<span class="info" data-tip="For each distance, the fastest pace you've held for that long inside any run. The curve's shape is your speed–endurance profile: a flat curve means you hold pace well as distance grows. Compare windows to see where you've gained or lost fitness.">i</span></h2>
+        <p class="hint">Best pace you've held at each distance — compare time windows.</p>
+        <div class="chart-controls" id="pacecurve-controls"></div>
+        <div id="chart-pacecurve" class="chart"></div>
+      </div>
+      <div class="card">
+        <h2>PR moments</h2>
+        <p class="hint" id="pr-count">Every time you lowered a best.</p>
+        <div id="chart-prtimeline" class="chart"></div>
+      </div>
+      <div class="card">
+        <h2>Superlatives</h2>
+        <p class="hint">The extremes. Click one to open the run.</p>
+        <div id="superlatives" class="sup-grid"></div>
+      </div>
+      <div class="card">
+        <h2>Distance mix</h2>
+        <p class="hint">How long your runs are, stacked by run type.</p>
+        <div id="chart-disthist" class="chart wipe"></div>
+      </div>
+      <div class="card">
+        <h2>Pace vs. distance</h2>
+        <p class="hint">Every run by how far and how fast.</p>
+        <div id="chart-pacedist" class="chart"></div>
+      </div>
+    </section>
+
+    <!-- YEARS -->
+    <section id="years" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <div><h2>Year over year</h2>
+          <p class="hint">Running total through each year, all on one Jan–Dec axis.</p></div>
+          <div class="pr-controls" id="yoy-controls"></div>
+        </div>
+        <p class="headline" id="yoy-headline"></p>
+        <div id="chart-yoy" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div><h2>Year in review</h2><p class="hint" id="year-vs"></p></div>
+          <div class="pr-controls" id="year-controls"></div>
+        </div>
+        <div id="year-tiles" class="stat-grid year-tiles"></div>
+        <div class="year-body">
+          <div id="year-story" class="year-story"></div>
+          <div id="chart-year-types" class="chart year-donut"></div>
+        </div>
+        <h3 class="sub-h">Miles by month</h3>
+        <div id="chart-year-months" class="chart wipe" style="height:260px"></div>
+        <h3 class="sub-h">When you ran</h3>
+        <div id="chart-year-punch" class="chart" style="height:260px"></div>
+      </div>
+      <div class="card">
+        <h2>Month by month</h2>
+        <p class="hint">Miles in every month you've logged.</p>
+        <div id="chart-monthgrid" class="chart" style="height:200px"></div>
+      </div>
+    </section>
+
     <!-- RUNS -->
     <section id="runs" class="panel">
       <div class="card">
         <div class="runs-toolbar">
           <input id="run-search" type="search" placeholder="Search name / notes…" />
           <select id="run-type"><option value="">All types</option></select>
+          <select id="run-year"><option value="">All years</option></select>
           <span id="run-count" class="muted"></span>
+          <button id="cmp-toggle" class="hdr-btn cmp-toggle" type="button" aria-pressed="false" title="Pick two runs to compare">⇄ Compare</button>
         </div>
         <div class="table-wrap">
           <table id="runs-table">
             <thead><tr>
+              <th class="cmp-col" aria-label="select"></th>
               <th data-sort="date">Date</th>
               <th data-sort="name">Name</th>
               <th data-sort="type">Type</th>
@@ -118,6 +197,7 @@
               <th data-sort="rel_effort" class="num">Effort</th>
             </tr></thead>
             <tbody></tbody>
+            <tfoot id="runs-foot"></tfoot>
           </table>
         </div>
       </div>
@@ -187,9 +267,30 @@
     <div class="lb-cap" id="lb-cap"></div>
   </div>
 
+  <!-- COMPARE SELECTION BAR (runs table compare mode) -->
+  <div id="cmp-bar" class="cmp-bar hidden" role="status"></div>
+
+  <!-- KEYBOARD SHORTCUTS -->
+  <div id="help" class="modal hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <div class="modal-box help-box">
+      <button class="modal-close" id="help-close" aria-label="Close">✕</button>
+      <h2>Keyboard shortcuts</h2>
+      <table class="keys"><tbody>
+        <tr><td><kbd>1</kbd>–<kbd>6</kbd></td><td>Switch tab</td></tr>
+        <tr><td><kbd>/</kbd></td><td>Search runs</td></tr>
+        <tr><td><kbd>t</kbd></td><td>Toggle light / dark</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>In a run: previous / next run</td></tr>
+        <tr><td><kbd>c</kbd></td><td>In a run: compare with…</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close</td></tr>
+        <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+      </tbody></table>
+      <p class="hint" style="margin-top:14px">Every view has its own link — share or bookmark a run (<code>#run/…</code>), a comparison (<code>#compare/…/…</code>) or a tab.</p>
+    </div>
+  </div>
+
   <!-- RUN DETAIL MODAL -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Run details">
-    <div class="modal-box">
+    <div class="modal-box" id="modal-box">
       <button id="modal-close" class="modal-close" aria-label="Close">✕</button>
       <div id="modal-body"></div>
     </div>
@@ -198,6 +299,9 @@
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="build/store.js"></script>
+  <script src="analytics.js"></script>
+  <script src="insights.js"></script>
+  <script src="compare.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
