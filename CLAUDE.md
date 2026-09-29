@@ -17,6 +17,13 @@ Personal running analytics + LLM coach over a Strava export. Single user, runs l
     API rows lack weather + GAP columns (export-only fields) — the pipeline tolerates both.
 - `web/` — static dashboard (vanilla JS + Plotly + Leaflet). `python web/serve.py`
   serves repo root so the page can fetch `../data/clean/*`. No build step.
+  - Classic scripts sharing one global scope, loaded in order: `analytics.js` (pure
+    math, `window.Analytics` / `module.exports`, unit-tested with `node --test`) →
+    `insights.js` (Records + Years tabs) → `compare.js` (run-vs-run) → `app.js` (boot,
+    routing, everything else). The first three only reference app.js helpers at call time.
+  - Hash routing: `#<tab>`, `#run/<id>`, `#compare/<a>/<b>`, `#pick/<id>`. Call
+    `openRun(id)` / `openCompare(a, b)` to navigate; `route()` does the rendering.
+  - Feature tour + changelog: `docs/FEATURES.md`.
 - `coach/` — `goal.md` (hand-edited), `coach_context.md` (generated),
   `conversations/` (coach memory). The `/coach` command is in `.claude/commands/`.
 
@@ -35,12 +42,15 @@ Personal running analytics + LLM coach over a Strava export. Single user, runs l
   `data/geocode_cache.json`; needs network only on first run). `core` bounds are
   percentile-trimmed for a tight default map view.
 - `summary.json` carries everything the dashboard needs: `points` (one rich,
-  clickable row per run incl. `ef`, `ef_gap`, `cadence`, `decoup`), `daily_miles`,
+  clickable row per run incl. `ef`, `ef_gap`, `cadence`, `decoup`, and `be` = that
+  run's best efforts `{label: seconds}`), `daily_miles`,
   `patterns`, `hr_zones`, `projections` (per-distance race predictions from a rolling
   power-law fitness fit — not single-effort Riegel), `fitness` (CTL/ATL/TSB/ACWR),
   `regions`, `photos`.
 
 ## Don't
+- Don't add a field to one pipeline only: `summary.json` is produced by both
+  `pipeline/build.py` and `web/build/summary.js` (e.g. `points[].be`).
 - Don't commit anything under `data/` (private export, gitignored).
 - Don't add an in-browser LLM chatbox — the coach intentionally runs via Claude Code
   on the user's subscription (no API key). An in-page chat would require the Anthropic API.

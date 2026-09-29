@@ -133,6 +133,8 @@ function runPoints(runs) {
       pace_s: f(r.pace_s, 1), gap_s: f(r.gap_pace_s, 1), hr: f(r.avg_hr, 0),
       ef: f(r.ef), ef_gap: f(r.ef_gap), cadence: f(r.cadence, 0), temp_f: f(r.temp_f, 0),
       elev_pm: f(epm, 0), rel_effort: f(r.rel_effort, 0), decoup: f(r.decoup, 1),
+      // Compact best efforts (label -> seconds) for the pace curve / trophy case.
+      be: Object.fromEntries(Object.entries(r.best_efforts || {}).map(([k, v]) => [k, Math.round(v * 10) / 10])),
     });
   }
   return out;

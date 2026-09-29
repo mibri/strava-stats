@@ -6,6 +6,10 @@ product. Design docs for the harder items live in [`docs/design/`](docs/design/)
 
 ## Where we are
 
+- 2026-09-29: added Records and Years tabs, run-vs-run comparison, run-detail upgrades,
+  URL routing and keyboard shortcuts, and the first unit tests. Summary and ideas are in
+  [`docs/FEATURES.md`](docs/FEATURES.md).
+
 - The SF Marathon (2026-07-26) is done. `coach/goal.md`, the hardcoded 3:45 goal line in
   `web/app.js` (`RACE_GOALS`), and `coach/coach_context.md` (generated 2026-07-28) are all
   still pointed at it.
@@ -15,7 +19,8 @@ product. Design docs for the harder items live in [`docs/design/`](docs/design/)
   names (browser regions are "Home" / "Area N") and weather/GAP, which come from the CSV
   in both paths anyway. The header comment in `web/build/pipeline.js` still says track
   parsing is "a later phase" and the README still calls the API sync a "stub". Both are stale.
-- There are no tests, for either pipeline.
+- Unit tests cover the dashboard's pure analytics (`tests/web/`, `node --test`, in CI).
+  There are still no pipeline tests or Python-vs-JS parity checks.
 - Data is browser-only: IndexedDB per device, nothing survives a cleared cache or a new laptop.
 
 ## Constraints that shape the plan
@@ -61,9 +66,10 @@ home region assumed. This phase makes those per-user settings.
 - [ ] **Goal / race tab** (L): countdown, projection vs goal over time, required pace,
       readiness, and a post-race debrief once the goal date has passed.
       Design: `docs/design/goal-tab.md`.
-- [ ] **Projections for any distance** (M): emit compact per-run best efforts into
-      `summary.points` so the client can project any goal distance (5k today, whatever
-      next) without a rebuild. Part of the goal-tab design.
+- [ ] **Projections for any distance** (M): ~~emit compact per-run best efforts into
+      `summary.points`~~ (done 2026-09-29: `points[].be`, both pipelines) so the client can
+      project any goal distance (5k today, whatever next) without a rebuild. Remaining:
+      the client-side `projectAt`. Part of the goal-tab design.
 - [ ] **Named regions in the browser build** (S): let the user rename "Area 2" in the map
       sidebar; persist in settings. (Nominatim from the browser stays out.)
 
@@ -88,9 +94,9 @@ home region assumed. This phase makes those per-user settings.
 - [ ] **Planned vs actual** (L): a structured weekly plan (authored in-app, or by the
       coach in local mode) rendered against the calendar, with per-workout hit/miss and
       weekly compliance. Design: `docs/design/planned-vs-actual.md`.
-- [ ] **Compare two runs** (L): overlay pace/HR/elevation by distance, cumulative time
+- [x] **Compare two runs** (L): overlay pace/HR/elevation by distance, cumulative time
       gap, side-by-side splits, both routes on one map with same-route detection.
-      Design: `docs/design/compare-runs.md`.
+      Design: `docs/design/compare-runs.md`. Shipped 2026-09-29 (`web/compare.js`).
 - [ ] **Coach reads the plan** (S, local mode only): `coach_context.md` gains a
       "last week: planned vs actual" table and `/coach` learns the plan schema so it can
       write next week's plan.
@@ -109,6 +115,13 @@ home region assumed. This phase makes those per-user settings.
 - [ ] **Bundle export/import** (S): "download my data" as a single `.json.gz` and re-import
       it without re-parsing. Doubles as the offline backup for people who don't sign in,
       and it's the same format the cloud save uses.
+
+### Phase 5 — More data viz (ideas, unsized)
+
+Shipped 2026-09-29: Records tab, Years tab, calendar metrics, route coloring, context
+badges. Next candidates (see `docs/FEATURES.md` § Ideas): shoe/gear mileage, heat-adjusted
+pace trend, a street-familiarity map, a shareable year-in-review image, and many-effort
+overlays for repeated segments.
 
 ### Later / explicitly not doing
 

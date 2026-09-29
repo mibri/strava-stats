@@ -142,7 +142,11 @@ async function boot() {
   renderRuns();
   setupTabs();
   setupChartReveals();
+  setupShortcuts();
   if (SAMPLE) showSampleBanner();
+  window.addEventListener("hashchange", route);
+  route();
+  document.body.dataset.ready = "1";      // lets tests (and you) know boot finished
 }
 
 // Charts start hidden (`chart-pending`, applied before the first paint so there's no
@@ -151,7 +155,7 @@ async function boot() {
 // leave the panel blank for a beat). Overview re-animates on each visit; progression plays
 // exactly once (its reveal class is dropped on animationend so re-showing the tab — which
 // restarts CSS animations on display:none→block — can't replay it).
-let progressionRevealed = false;
+const revealedPanels = new Set();
 function setupChartReveals() {
   if (reduceMotion()) return;
   document.querySelectorAll(".chart").forEach((c) => c.classList.add("chart-pending"));
@@ -163,9 +167,9 @@ function revealPanelCharts(panelId) {
   if (reduceMotion()) return;
   const charts = document.querySelectorAll(`#${panelId} .chart`);
   if (!charts.length) return;
-  if (panelId === "progression") {
-    if (progressionRevealed) return;
-    progressionRevealed = true;
+  if (panelId !== "overview") {
+    if (revealedPanels.has(panelId)) return;
+    revealedPanels.add(panelId);
     charts.forEach((el) => {
       el.classList.remove("chart-pending");
       el.classList.add("chart-reveal");
@@ -193,32 +197,92 @@ function showSampleBanner() {
   document.body.classList.add("has-sample-banner");
 }
 
-/* ---------- tabs ---------- */
-let mapBuilt = false;
+/* ---------- tabs + routing ---------- */
+// Every view has a URL: #<tab>, #run/<id>, #compare/<idA>/<idB>. Tabs push history so
+// Back walks through them; the run/compare modal is a history entry of its own, so Back
+// closes it (and the ✕ button is just "Back" when we opened it).
+const TABS = ["overview", "progression", "records", "years", "runs", "map"];
+let mapBuilt = false, modalPushed = false;
+const currentTab = () => (document.querySelector(".tab.active") || {}).dataset?.tab || "overview";
+
+function activateTab(id) {
+  const btn = document.querySelector(`.tab[data-tab="${id}"]`);
+  if (!btn || btn.classList.contains("active")) return;   // already on this tab — don't re-reveal
+  document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+  btn.classList.add("active");
+  if (btn.scrollIntoView) btn.scrollIntoView({ block: "nearest", inline: "nearest" });   // phones: tab strip scrolls
+  $(`#${id}`).classList.add("active");
+  if (id === "map") {
+    if (!mapBuilt) { buildHeatmap(); mapBuilt = true; }
+    // Returning to an already-built map: the container was display:none, so Leaflet's
+    // cached size is stale. Recompute it immediately (the throttled window-resize path
+    // is what left the map blank for a beat).
+    else if (state.heatmap) state.heatmap.invalidateSize();
+  }
+  // Records / Years render on first visit, once their panel has real width.
+  drawCmpBar();
+  if (id === "records") renderRecords();
+  if (id === "years") renderYears();
+  revealPanelCharts(id);
+  window.dispatchEvent(new Event("resize"));
+}
+
+function go(hash, replace = false) {
+  if (replace) { history.replaceState(null, "", hash); route(); }
+  else if (location.hash === hash) route();
+  else location.hash = hash;                    // → hashchange → route()
+}
+
+function route() {
+  const [kind, a, b] = decodeURIComponent(location.hash.slice(1)).split("/");
+  if (kind === "run" && a) return renderRun(a);
+  if (kind === "compare" && a && b) return renderCompare(a, b);
+  if (kind === "pick" && a) { showModal(); return renderComparePicker(a); }
+  hideModal();
+  modalPushed = false;
+  if (TABS.includes(kind)) activateTab(kind);
+}
+
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
-    btn.onclick = () => {
-      if (btn.classList.contains("active")) return;   // already on this tab — don't re-reveal
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      btn.classList.add("active");
-      const id = btn.dataset.tab;
-      $(`#${id}`).classList.add("active");
-      if (id === "map") {
-        if (!mapBuilt) { buildHeatmap(); mapBuilt = true; }
-        // Returning to an already-built map: the container was display:none, so Leaflet's
-        // cached size is stale. Recompute it immediately (the throttled window-resize path
-        // is what left the map blank for a beat).
-        else if (state.heatmap) state.heatmap.invalidateSize();
-      }
-      revealPanelCharts(id);
-      window.dispatchEvent(new Event("resize"));
-    };
+    btn.onclick = () => { if (!btn.classList.contains("active")) go(`#${btn.dataset.tab}`); };
   });
   // Clicking the logo/wordmark returns to the Overview tab.
   const brand = $("#brand-home");
   const goHome = () => document.querySelector('.tab[data-tab="overview"]').click();
   if (brand) { brand.onclick = goHome; brand.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goHome(); } }; }
+}
+
+/* ---------- keyboard shortcuts ---------- */
+function setupShortcuts() {
+  const help = $("#help");
+  const openHelp = () => help.classList.remove("hidden");
+  const closeHelp = () => help.classList.add("hidden");
+  $("#help-btn").onclick = openHelp;
+  $("#help-close").onclick = closeHelp;
+  help.onclick = (e) => { if (e.target === help) closeHelp(); };
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
+    if (!$("#lightbox").classList.contains("hidden")) return;       // lightbox owns the keys
+    if (e.key === "Escape") {
+      if (!help.classList.contains("hidden")) return closeHelp();
+      if (!$("#modal").classList.contains("hidden")) return closeModal();
+      return;
+    }
+    if (typing) return;
+    const modalOpen = !$("#modal").classList.contains("hidden");
+    if (e.key === "?") { e.preventDefault(); return help.classList.contains("hidden") ? openHelp() : closeHelp(); }
+    if (modalOpen && state.openRunId && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault(); return stepRun(e.key === "ArrowLeft" ? -1 : 1);
+    }
+    if (modalOpen && state.openRunId && e.key === "c") return go(`#pick/${state.openRunId}`, true);
+    if (modalOpen) return;
+    if (/^[1-6]$/.test(e.key)) return go(`#${TABS[+e.key - 1]}`);
+    if (e.key === "/") { e.preventDefault(); go("#runs"); setTimeout(() => $("#run-search").focus(), 30); return; }
+    if (e.key === "t") return window.toggleTheme && window.toggleTheme();
+  });
 }
 
 /* ---------- timeframe ---------- */
@@ -286,25 +350,51 @@ function renderOverview() {
     marker: { color: "#fc5200" }, hovertemplate: "%{x}<br>%{y:.1f} mi<extra></extra>",
   }], { yaxis: { title: "miles", gridcolor: GRID } });
 
-  renderCalendar();
+  renderGlance();
+  setupCalendarMetric();
   renderPhotoStrip();
+}
+
+// The calendar can shade days by miles, time, climb or effort (summed over the day's runs).
+const CAL_METRICS = {
+  miles: { label: "Miles", hint: "Daily miles", f: (r) => r.distance_mi || 0, fmt: (v) => `${v.toFixed(1)} mi` },
+  time: { label: "Time", hint: "Daily time on feet", f: (r) => (r.moving_s || 0) / 60, fmt: (v) => fmtDur(v * 60) },
+  climb: { label: "Climb", hint: "Daily elevation gain", f: (r) => r.elev_gain_ft || 0, fmt: (v) => `${num(v)} ft` },
+  effort: { label: "Effort", hint: "Daily relative effort", f: (r) => r.rel_effort || 0, fmt: (v) => `effort ${num(v)}` },
+};
+function setupCalendarMetric() {
+  state.calMetric ||= "miles";
+  const el = $("#cal-metric");
+  el.innerHTML = Object.entries(CAL_METRICS).map(([k, m]) =>
+    `<button class="${k === state.calMetric ? "active" : ""}" data-k="${k}">${m.label}</button>`).join("");
+  el.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    state.calMetric = b.dataset.k;
+    el.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+    renderCalendar();
+  }));
+  renderCalendar();
 }
 
 /* GitHub-style daily-mileage calendar — one block per year, newest first (no side-scroll hunt) */
 function renderCalendar() {
   const days = state.summary.daily_miles;
   if (!days || !days.length) { $("#calendar").innerHTML = `<span class="muted">No data</span>`; return; }
-  const max = Math.max(...days.map((d) => d.miles));
+  const M = CAL_METRICS[state.calMetric || "miles"];
+  const byDate = {};
+  state.runs.forEach((r) => { const k = r.date.slice(0, 10); byDate[k] = (byDate[k] || 0) + M.f(r); });
+  $("#cal-hint").textContent = `${M.hint} — click a day to open the run.`;
+  // Scale to the 98th percentile so one monster day doesn't wash out everything else.
+  const vals = Object.values(byDate).filter((v) => v > 0).sort((a, b) => a - b);
+  const max = vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.98))] : 1;
   // Light mode needs a pale→deep ramp (more miles = darker); the dark-mode ramp goes the
   // other way (more miles = brighter), which would read inverted on a white background.
   const light = document.documentElement.getAttribute("data-theme") === "light";
   const ramp = light ? ["#ffd2b8", "#ff9e66", "#f0631b", "#c43c00"] : ["#5c2e12", "#9c4410", "#d65a10", "#fc5200"];
   const color = (mi) => {
     if (mi <= 0) return "var(--bg-elev2)";
-    const r = mi / max;
+    const r = Math.min(1, mi / max);
     return r < 0.25 ? ramp[0] : r < 0.5 ? ramp[1] : r < 0.75 ? ramp[2] : ramp[3];
   };
-  const byDate = Object.fromEntries(days.map((d) => [d.date, d.miles]));
   const years = [...new Set(days.map((d) => d.date.slice(0, 4)))].sort().reverse();
   const dow = ["M", "", "W", "", "F", "", ""];
   const today = new Date();
@@ -323,7 +413,7 @@ function renderCalendar() {
       if (d.getFullYear() != yr || d > today) { cells.push(`<div class="cal-cell future" style="--cal-d:${delay}ms"></div>`); continue; }
       const k = iso(d); const mi = byDate[k] || 0;
       const click = state.dateById[k] ? ` data-id="${state.dateById[k]}"` : "";
-      cells.push(`<div class="cal-cell${mi > 0 ? " has" : ""}"${click} title="${k}: ${mi.toFixed(1)} mi" style="--cal-d:${delay}ms;background:${color(mi)}"></div>`);
+      cells.push(`<div class="cal-cell${mi > 0 ? " has" : ""}"${click} title="${k}: ${M.fmt(mi)}" style="--cal-d:${delay}ms;background:${color(mi)}"></div>`);
     }
     const ncols = Math.round(cells.length / 7);
     // place each month label at the week-column where its 1st falls
@@ -654,24 +744,54 @@ function renderRuns() {
   [...new Set(state.runs.map((r) => r.type))].forEach((t) => {
     const o = document.createElement("option"); o.value = t; o.textContent = t; sel.appendChild(o);
   });
+  const ysel = $("#run-year");
+  [...new Set(state.runs.map((r) => r.date.slice(0, 4)))].sort().reverse().forEach((y) => {
+    const o = document.createElement("option"); o.value = y; o.textContent = y; ysel.appendChild(o);
+  });
   $("#run-search").oninput = drawRows;
   sel.onchange = drawRows;
-  document.querySelectorAll("#runs-table th").forEach((th) => {
+  ysel.onchange = drawRows;
+  document.querySelectorAll("#runs-table th[data-sort]").forEach((th) => {
     th.onclick = () => {
       const k = th.dataset.sort;
       state.sortDir = state.sortKey === k ? -state.sortDir : (k === "name" || k === "type" ? 1 : -1);
       state.sortKey = k; drawRows();
     };
   });
+  // Compare mode: a checkbox column; picking two runs offers "Compare A vs B".
+  state.cmpSel = [];
+  $("#cmp-toggle").onclick = () => {
+    const on = !$("#runs-table").classList.contains("compare-mode");
+    $("#runs-table").classList.toggle("compare-mode", on);
+    $("#cmp-toggle").classList.toggle("active", on);
+    $("#cmp-toggle").setAttribute("aria-pressed", String(on));
+    if (!on) state.cmpSel = [];
+    drawRows(); drawCmpBar();
+  };
   drawRows();
+}
+
+function drawCmpBar() {
+  const bar = $("#cmp-bar");
+  const on = $("#runs-table").classList.contains("compare-mode") && currentTab() === "runs";
+  if (!on) { bar.classList.add("hidden"); return; }
+  const sel = state.cmpSel.map((id) => state.runs.find((r) => r.id === id)).filter(Boolean);
+  const label = (r) => `${escapeHtml(r.name)} <span class="muted">${r.date.slice(0, 10)}</span>`;
+  bar.innerHTML = sel.length === 2
+    ? `<span>${label(sel[0])} <b>vs</b> ${label(sel[1])}</span><button class="draw-cta" id="cmp-go">Compare →</button><button class="nav-btn" id="cmp-clear">Clear</button>`
+    : `<span>${sel.length ? `${label(sel[0])} — pick one more run` : "Pick two runs to compare"}</span>${sel.length ? `<button class="nav-btn" id="cmp-clear">Clear</button>` : ""}`;
+  bar.classList.remove("hidden");
+  if ($("#cmp-go")) $("#cmp-go").onclick = () => openCompare(sel[0].id, sel[1].id);
+  if ($("#cmp-clear")) $("#cmp-clear").onclick = () => { state.cmpSel = []; drawRows(); drawCmpBar(); };
 }
 
 function drawRows() {
   const q = $("#run-search").value.toLowerCase();
   const ty = $("#run-type").value;
+  const yr = $("#run-year").value;
   let rows = state.runs.filter((r) =>
-    (!ty || r.type === ty) &&
-    (!q || (r.name + " " + (r.description || "")).toLowerCase().includes(q)));
+    (!ty || r.type === ty) && (!yr || r.date.startsWith(yr)) &&
+    (!q || (r.name + " " + (r.description || "") + " " + r.date.slice(0, 10)).toLowerCase().includes(q)));
   const k = state.sortKey, dir = state.sortDir;
   rows.sort((a, b) => {
     let x = a[k], y = b[k];
@@ -679,9 +799,15 @@ function drawRows() {
     if (typeof x === "string") return x.localeCompare(y) * dir;
     return ((x ?? -Infinity) - (y ?? -Infinity)) * dir;
   });
+  document.querySelectorAll("#runs-table th[data-sort]").forEach((th) => {
+    th.classList.toggle("sorted", th.dataset.sort === k);
+    th.dataset.dir = th.dataset.sort === k ? (dir > 0 ? "asc" : "desc") : "";
+  });
   $("#run-count").textContent = `${rows.length} runs`;
+  const picked = new Set(state.cmpSel || []);
   $("#runs-table tbody").innerHTML = rows.map((r) => `
-    <tr data-id="${r.id}">
+    <tr data-id="${r.id}" class="${picked.has(r.id) ? "picked" : ""}">
+      <td class="cmp-col"><input type="checkbox" aria-label="select for comparison" ${picked.has(r.id) ? "checked" : ""} /></td>
       <td>${r.date.slice(0, 10)}</td>
       <td>${escapeHtml(r.name)}${r.n_photos ? " 📷" : ""}${r.exclude_prog ? ` <span class="muted" title="excluded from progression charts">⊘</span>` : ""}${r.description ? ` <span class="muted">· ${escapeHtml(r.description.slice(0, 40))}</span>` : ""}</td>
       <td><span class="pill ${r.type}">${r.type}</span></td>
@@ -692,7 +818,25 @@ function drawRows() {
       <td class="num">${num(r.elev_gain_ft)}</td>
       <td class="num">${r.rel_effort ? Math.round(r.rel_effort) : "—"}</td>
     </tr>`).join("");
-  document.querySelectorAll("#runs-table tbody tr").forEach((tr) => (tr.onclick = () => openRun(tr.dataset.id)));
+  // Totals for whatever the filters currently show.
+  const mi = rows.reduce((s, r) => s + (r.distance_mi || 0), 0);
+  const secs = rows.reduce((s, r) => s + (r.moving_s || 0), 0);
+  const ft = rows.reduce((s, r) => s + (r.elev_gain_ft || 0), 0);
+  const hrRows = rows.filter((r) => r.avg_hr && r.moving_s);
+  const hrW = hrRows.reduce((s, r) => s + r.moving_s, 0);
+  const hr = hrW ? hrRows.reduce((s, r) => s + r.avg_hr * r.moving_s, 0) / hrW : null;
+  $("#runs-foot").innerHTML = rows.length ? `<tr>
+    <td class="cmp-col"></td><td colspan="3"><b>Total</b> <span class="muted">· ${fmtDur(secs)} moving</span></td>
+    <td class="num"><b>${num(mi, 1)}</b></td><td class="num">${fmtPace(mi ? secs / mi : null)}</td><td class="num"></td>
+    <td class="num">${hr ? Math.round(hr) : "—"}</td><td class="num">${num(ft)}</td><td class="num"></td></tr>` : "";
+  const compare = $("#runs-table").classList.contains("compare-mode");
+  document.querySelectorAll("#runs-table tbody tr").forEach((tr) => (tr.onclick = () => {
+    if (!compare) return openRun(tr.dataset.id);
+    const id = tr.dataset.id, sel = state.cmpSel;
+    const i = sel.indexOf(id);
+    if (i >= 0) sel.splice(i, 1); else { sel.push(id); if (sel.length > 2) sel.shift(); }
+    drawRows(); drawCmpBar();
+  }));
 }
 const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -707,22 +851,195 @@ async function loadStream(id) {
 }
 
 let detailMap = null;
-async function openRun(id) {
+const ZONE_COLORS = ["#45c08a", "#4f93ff", "#9b6bff", "#fc5200", "#e24b4a"];
+
+// Modal plumbing shared by the run view, the compare picker and the compare view.
+function showModal() { $("#modal").classList.remove("hidden"); }
+function hideModal() {
+  $("#modal").classList.add("hidden");
+  $("#modal-box").classList.remove("wide");
+  state.openRunId = null;
+}
+function closeModal() {
+  if (modalPushed) { modalPushed = false; history.back(); }       // we pushed the entry: pop it
+  else go(`#${currentTab()}`, true);
+}
+// Public entry points (charts, tables, the map…) navigate; route() does the rendering.
+function openModalRoute(hash) {
+  const open = !$("#modal").classList.contains("hidden");
+  if (!open) modalPushed = true;
+  go(hash, open);            // inside the modal, swap views without stacking history
+}
+function openRun(id) { openModalRoute(`#run/${id}`); }
+function openCompare(a, b) { openModalRoute(`#compare/${a}/${b}`); }
+
+// Chronological neighbours, for ← / → in the run view.
+function stepRun(dir) {
+  const sorted = state.runsByDate || (state.runsByDate = [...state.runs].sort((a, b) => (a.date < b.date ? -1 : 1)));
+  const i = sorted.findIndex((r) => r.id === state.openRunId);
+  const next = sorted[i + dir];
+  if (next) openRun(next.id);
+}
+
+// "How does this run stack up": all-time and year ranks, best efforts that are
+// records, and where the pace sits among runs of the same type.
+function runContext(r) {
+  const out = [];
+  const ord = (n) => `${n}${["th", "st", "nd", "rd"][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]}`;
+  const yr = r.date.slice(0, 4);
+  const inYear = state.runs.filter((x) => x.date.startsWith(yr));
+  const dRank = Analytics.rankOf(r.distance_mi, state.runs.map((x) => x.distance_mi));
+  const dRankY = Analytics.rankOf(r.distance_mi, inYear.map((x) => x.distance_mi));
+  if (dRank <= 10) out.push(["📏", dRank === 1 ? "Longest run ever" : `${ord(dRank)} longest run ever`]);
+  else if (dRankY <= 3) out.push(["📏", dRankY === 1 ? `Longest run of ${yr}` : `${ord(dRankY)} longest of ${yr}`]);
+  const eRank = Analytics.rankOf(r.elev_gain_ft, state.runs.map((x) => x.elev_gain_ft));
+  if (r.elev_gain_ft > 0 && eRank <= 10) out.push(["⛰️", eRank === 1 ? "Most climbing ever" : `${ord(eRank)} most climbing ever`]);
+  // Best efforts that were all-time or year records when run.
+  const recs = state.effortRecs || (state.effortRecs = Analytics.effortsByRun(state.points, state.summary.pr_progression));
+  const mine = recs.find((x) => x.id === r.id);
+  if (mine) {
+    const all = Object.fromEntries(Analytics.paceCurve(recs).map((p) => [p.label, p]));
+    const year = Object.fromEntries(Analytics.paceCurve(recs, `${yr}-01-01`, `${yr}-12-31`).map((p) => [p.label, p]));
+    const allPR = [], yrPR = [];
+    for (const [label] of Analytics.BE_DISTANCES) {
+      if (mine.be[label] == null) continue;
+      if (all[label] && all[label].id === r.id) allPR.push(label);
+      else if (year[label] && year[label].id === r.id) yrPR.push(label);
+    }
+    if (allPR.length) out.push(["🏆", `All-time best ${allPR.join(", ")}`]);
+    if (yrPR.length) out.push(["🥇", `${yr}'s best ${yrPR.join(", ")}`]);
+  }
+  // Pace percentile among runs of the same type (and similar distance, ±50%).
+  const peers = state.runs.filter((x) => x.type === r.type && x.id !== r.id && x.pace_s &&
+    x.distance_mi >= r.distance_mi * 0.5 && x.distance_mi <= r.distance_mi * 1.5);
+  if (r.pace_s && peers.length >= 8) {
+    const slower = peers.filter((x) => x.pace_s > r.pace_s).length / peers.length;
+    const pct = Math.round(slower * 100);
+    if (pct >= 60) out.push(["⚡", `Faster than ${pct}% of similar ${r.type} runs`]);
+    else if (pct <= 25) out.push(["🐢", `Easier than ${100 - pct}% of similar ${r.type} runs`]);
+  }
+  return out;
+}
+
+// Time in each HR zone for this run, as a stacked bar (zones from the summary's max).
+function zoneBarHtml(st) {
+  const hz = state.summary.hr_zones;
+  if (!hz || !hz.zones || !st.hr || !st.t) return "";
+  const secs = Analytics.hrZoneTime(st.t, st.hr, hz.zones);
+  const tot = secs.reduce((a, b) => a + b, 0);
+  if (tot < 60) return "";
+  const segs = hz.zones.map((z, i) => {
+    const pct = (secs[i] / tot) * 100;
+    return pct > 0 ? `<span style="width:${pct}%;background:${ZONE_COLORS[i]}" title="${z.zone} ${z.label}: ${fmtDur(secs[i])} (${Math.round(pct)}%)"></span>` : "";
+  }).join("");
+  const legend = hz.zones.map((z, i) => secs[i] > 0
+    ? `<span><i style="background:${ZONE_COLORS[i]}"></i>${z.zone} ${z.label} <b>${fmtDur(secs[i])}</b></span>` : "").join("");
+  return `<div class="fc-card zone-card"><h3>Time in heart-rate zones</h3>
+    <div class="zone-bar">${segs}</div><div class="zone-legend">${legend}</div></div>`;
+}
+
+/* Route coloring: the track as short segments colored by pace (vs. this run's median:
+ * orange = faster, blue = slower), heart-rate zone, or grade (the terrain-bar colors). */
+const GRADE_BANDS = [[-Infinity, -8, "#3f72c4", "steep ↓"], [-8, -3, "#6f9fe0", "↓"], [-3, 3, "#8b94a3", "flat"],
+  [3, 8, "#fc8a4f", "↑"], [8, Infinity, "#fc5200", "steep ↑"]];
+function lerpColor(a, b, t) {
+  const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+function routeTrack(d) {
+  // Prefer the index-aligned trajectory (lat/lon/pace/hr share one index); fall back to
+  // the display stream when its latlng lines up with the other arrays.
+  const tr = d && d.traj, st = (d && d.stream) || {};
+  let pts = null;
+  if (tr && tr.lat && tr.lat.length > 1) {
+    pts = tr.lat.map((la, i) => ({ ll: [la, tr.lon[i]], dist: tr.dist_mi?.[i], pace: tr.pace_s?.[i], hr: tr.hr?.[i] }));
+  } else if (st.latlng && st.latlng.length > 1 && st.dist_mi && st.latlng.length === st.dist_mi.length) {
+    pts = st.latlng.map((ll, i) => ({ ll, dist: st.dist_mi[i], pace: st.pace_s?.[i], hr: st.hr?.[i] }));
+  }
+  if (!pts) return null;
+  // Elevation from the display stream, resampled onto the track's distances → grade.
+  if (st.elev_ft && st.dist_mi && pts[0].dist != null) {
+    const el = Analytics.resample(st.dist_mi, st.elev_ft, pts.map((p) => p.dist));
+    pts.forEach((p, i) => (p.elev = el[i]));
+    const W = 0.03;                                           // grade over ~50 m
+    let j = 0, k = 0;
+    for (let i = 0; i < pts.length; i++) {
+      while (j < pts.length - 1 && pts[j].dist < pts[i].dist + W) j++;
+      while (k < i && pts[k].dist < pts[i].dist - W) k++;
+      const a = pts[k], b = pts[j];
+      const dd = (b.dist - a.dist) * 5280;
+      pts[i].grade = dd > 20 && a.elev != null && b.elev != null ? ((b.elev - a.elev) / dd) * 100 : null;
+    }
+  }
+  // Light smoothing of pace so GPS jitter doesn't paint confetti.
+  const sm = rolling(pts.map((p) => p.pace), 7);
+  pts.forEach((p, i) => (p.paceS = sm[i]));
+  return pts;
+}
+function colorTrack(pts, metric) {
+  if (metric === "pace") {
+    const v = pts.map((p) => p.paceS).filter((x) => x != null && isFinite(x)).sort((a, b) => a - b);
+    if (v.length < 10) return null;
+    const med = v[Math.floor(v.length / 2)];
+    const span = Math.max(15, (v[Math.floor(v.length * 0.9)] - v[Math.floor(v.length * 0.1)]) / 2);
+    return {
+      color: (p) => {
+        if (p.paceS == null) return "#8b94a3";
+        const t = Math.max(-1, Math.min(1, (med - p.paceS) / span));   // +1 = fast
+        return t >= 0 ? lerpColor("#8b94a3", "#fc5200", t) : lerpColor("#8b94a3", "#3f72c4", -t);
+      },
+      legend: `<span>slower ${fmtPace(med + span)}</span><span class="grad" style="background:linear-gradient(90deg,#3f72c4,#8b94a3,#fc5200)"></span>
+        <span>${fmtPace(med - span)} faster</span><span class="muted">· median ${fmtPace(med)}/mi</span>`,
+    };
+  }
+  if (metric === "hr") {
+    const z = state.summary.hr_zones && state.summary.hr_zones.zones;
+    if (!z || !pts.some((p) => p.hr != null)) return null;
+    const zi = (h) => z.findIndex((q) => h >= (q.lo || 0) && (q.hi == null || h < q.hi));
+    return {
+      color: (p) => (p.hr == null ? "#8b94a3" : ZONE_COLORS[Math.max(0, zi(p.hr))]),
+      legend: z.map((q, i) => `<span><i style="background:${ZONE_COLORS[i]}"></i>${q.zone}</span>`).join(""),
+    };
+  }
+  if (metric === "grade") {
+    if (!pts.some((p) => p.grade != null)) return null;
+    return {
+      color: (p) => (p.grade == null ? "#8b94a3" : GRADE_BANDS.find(([lo, hi]) => p.grade >= lo && p.grade < hi)[2]),
+      legend: GRADE_BANDS.map(([, , c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join(""),
+    };
+  }
+  return null;
+}
+
+async function renderRun(id) {
   const r = state.runs.find((x) => x.id === id);
   if (!r) return;
+  state.openRunId = id;
   const d = await loadStream(id);
+  if (state.openRunId !== id) return;        // user moved on while this was loading
   const be = d && d.best_efforts || {};
   const beHtml = Object.entries(be).map(([k, v]) => `<span class="be">${k} <b>${v.t}</b></span>`).join("");
   const photos = (d && d.photos) || [];
   const photoSet = photos.map((f) => ({ file: f, name: r.name, date: r.date.slice(0, 10), id: r.id }));
   const photoHtml = photos.length
     ? `<div class="detail-photos">${photos.map((f, i) => `<img src="${mediaUrl(f)}" data-i="${i}" />`).join("")}</div>` : "";
-
+  const st = d && d.stream || {};
   const formClimbHtml = buildFormClimb(d, r);
+  const ctx = runContext(r);
+  const sorted = state.runsByDate || (state.runsByDate = [...state.runs].sort((a, b) => (a.date < b.date ? -1 : 1)));
+  const idx = sorted.findIndex((x) => x.id === id);
 
+  $("#modal-box").classList.remove("wide");
   $("#modal-body").innerHTML = `
+    <div class="run-nav">
+      <button class="nav-btn" id="run-prev" ${idx > 0 ? "" : "disabled"} title="Previous run (←)">‹ Older</button>
+      <button class="nav-btn" id="run-next" ${idx < sorted.length - 1 ? "" : "disabled"} title="Next run (→)">Newer ›</button>
+      <button class="nav-btn accent" id="run-compare" title="Compare with another run (c)">⇄ Compare with…</button>
+    </div>
     <h2>${escapeHtml(r.name)}</h2>
     <p class="sub">${r.date} · <span class="pill ${r.type}">${r.type}</span>${r.description ? " · " + escapeHtml(r.description) : ""}</p>
+    ${ctx.length ? `<div class="ctx-badges">${ctx.map(([e, t]) => `<span class="badge">${e} ${t}</span>`).join("")}</div>` : ""}
     <div class="detail-stats">
       ${stat(r.distance_mi.toFixed(2), "mi")}
       ${stat(fmtDur(r.moving_s), "moving")}
@@ -735,27 +1052,76 @@ async function openRun(id) {
     </div>
     ${beHtml ? `<div class="be-grid">${beHtml}</div>` : ""}
     ${formClimbHtml}
+    ${zoneBarHtml(st)}
     ${photoHtml}
+    <div class="route-head"><div class="pr-controls" id="route-color" style="margin:0"></div><div class="route-legend" id="route-legend"></div></div>
     <div id="detail-map" class="detail-map"></div>
     <div id="detail-streams"></div>
     <div id="detail-splits"></div>`;
-  $("#modal").classList.remove("hidden");
+  showModal();
+  $("#modal-box").scrollTop = 0;
+  $("#run-prev").onclick = () => stepRun(-1);
+  $("#run-next").onclick = () => stepRun(1);
+  $("#run-compare").onclick = () => go(`#pick/${id}`, true);
   $("#modal-body").querySelectorAll(".detail-photos img").forEach((img) =>
     (img.onclick = () => openLightbox(photoSet, +img.dataset.i)));
 
-  const st = d && d.stream || {};
+  // Map, with a route-coloring picker and a marker that follows chart hovers.
+  const track = routeTrack(d);
+  const routeLL = (st.latlng && st.latlng.length) ? st.latlng : track ? track.map((p) => p.ll) : null;
+  let hoverMarker = null, routeLayer = null;
+  const METRICS = [["plain", "Route"], ["pace", "Pace"], ["hr", "Heart rate"], ["grade", "Grade"]]
+    .filter(([k]) => k === "plain" || (track && colorTrack(track, k)));
+  state.routeColor = METRICS.some(([k]) => k === state.routeColor) ? state.routeColor : "plain";
+  const drawRoute = () => {
+    if (!detailMap) return;
+    if (routeLayer) detailMap.removeLayer(routeLayer);
+    routeLayer = L.layerGroup().addTo(detailMap);
+    const col = state.routeColor !== "plain" && track ? colorTrack(track, state.routeColor) : null;
+    $("#route-legend").innerHTML = col ? col.legend : "";
+    if (!col) { L.polyline(routeLL, { color: "#fc5200", weight: 4 }).addTo(routeLayer); return; }
+    // Merge consecutive same-color points into one polyline (far fewer layers).
+    let cur = null, run = [];
+    track.forEach((p, i) => {
+      const c = col.color(p);
+      if (c !== cur && run.length) { run.push(p.ll); L.polyline(run, { color: cur, weight: 5, opacity: 0.95 }).addTo(routeLayer); run = []; }
+      cur = c; run.push(p.ll);
+      if (i === track.length - 1 && run.length > 1) L.polyline(run, { color: cur, weight: 5, opacity: 0.95 }).addTo(routeLayer);
+    });
+  };
+  $("#route-color").innerHTML = METRICS.length > 1
+    ? METRICS.map(([k, l]) => `<button class="${k === state.routeColor ? "active" : ""}" data-k="${k}">${l}</button>`).join("") : "";
+  $("#route-color").querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    state.routeColor = b.dataset.k;
+    $("#route-color").querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+    drawRoute();
+  }));
   setTimeout(() => {
     if (detailMap) { detailMap.remove(); detailMap = null; }
-    if (st.latlng && st.latlng.length) {
+    const ll = routeLL;
+    if (ll && ll.length && document.getElementById("detail-map")) {
       detailMap = L.map("detail-map", { attributionControl: false, zoomControl: true });
       L.tileLayer(`https://{s}.basemaps.cartocdn.com/${MAP_TILES}/{z}/{x}/{y}{r}.png`, { maxZoom: 19 }).addTo(detailMap);
-      const line = L.polyline(st.latlng, { color: "#fc5200", weight: 4 }).addTo(detailMap);
-      detailMap.fitBounds(line.getBounds(), { padding: [20, 20] });
-      L.circleMarker(st.latlng[0], { radius: 5, color: "#45c08a", fillOpacity: 1 }).addTo(detailMap);
-    } else {
+      detailMap.fitBounds(L.latLngBounds(ll), { padding: [20, 20] });
+      drawRoute();
+      L.circleMarker(ll[0], { radius: 5, color: "#45c08a", fillOpacity: 1 }).addTo(detailMap);
+      hoverMarker = L.circleMarker(ll[0], { radius: 7, color: "#0b0d11", weight: 2, fillColor: "#ffd23f", fillOpacity: 1 });
+    } else if (document.getElementById("detail-map")) {
       $("#detail-map").innerHTML = `<div class="muted" style="padding:40px;text-align:center">No GPS track</div>`;
     }
   }, 60);
+  // Chart hover → the matching spot on the route (by distance, else by sample index).
+  const placeMarker = (pt) => {
+    if (!detailMap || !hoverMarker) return;
+    let ll = null;
+    if (st.dist_mi && track && track[0].dist != null) {
+      const dmi = st.dist_mi[pt.pointIndex];
+      let lo = 0, hi = track.length - 1;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (track[m].dist < dmi) lo = m + 1; else hi = m; }
+      ll = track[lo].ll;
+    } else if (st.latlng && st.latlng.length === (st.t || []).length) ll = st.latlng[pt.pointIndex];
+    if (ll) { hoverMarker.setLatLng(ll); if (!detailMap.hasLayer(hoverMarker)) hoverMarker.addTo(detailMap); }
+  };
 
   const x = st.dist_mi || st.t;
   const xt = st.dist_mi ? "distance (mi)" : "time (s)";
@@ -768,8 +1134,13 @@ async function openRun(id) {
     plot(`ds-${t.key}`, [{
       type: "scatter", mode: "lines", x, y: t.y, line: { color: t.color, width: 2 }, connectgaps: true,
       fill: t.fill ? "tozeroy" : undefined, fillcolor: t.fill ? t.color + "22" : undefined,
+      customdata: t.pace ? t.y.map(fmtPace) : undefined,
+      hovertemplate: t.pace ? "%{customdata}/mi<extra></extra>" : t.key === "hr" ? "%{y:.0f} bpm<extra></extra>" : "%{y:.0f} ft<extra></extra>",
     }], { margin: { l: 50, r: 16, t: 6, b: 30 }, xaxis: { title: xt, gridcolor: GRID },
-        yaxis: t.pace ? paceAxis(t.y) : { gridcolor: GRID }, height: 180 });
+        yaxis: t.pace ? paceAxis(t.y) : { gridcolor: GRID }, height: 180, hovermode: "x" }).then(() => {
+      const gd = document.getElementById(`ds-${t.key}`);
+      if (gd && gd.on) gd.on("plotly_hover", (ev) => placeMarker(ev.points[0]));
+    });
   });
 
   if (d && d.splits && d.splits.length) {
@@ -829,8 +1200,8 @@ function buildFormClimb(d, r) {
 
   return `<div class="form-climb">${formCard}${climbCard}</div>`;
 }
-$("#modal-close").onclick = () => $("#modal").classList.add("hidden");
-$("#modal").onclick = (e) => { if (e.target.id === "modal") $("#modal").classList.add("hidden"); };
+$("#modal-close").onclick = closeModal;
+$("#modal").onclick = (e) => { if (e.target.id === "modal") closeModal(); };
 
 /* ---------- heatmap ---------- */
 function buildHeatmap() {
